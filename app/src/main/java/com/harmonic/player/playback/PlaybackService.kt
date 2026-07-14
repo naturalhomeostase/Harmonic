@@ -10,6 +10,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.glance.appwidget.updateAll
 import com.harmonic.player.HarmonicApp
 import com.harmonic.player.MainActivity
 import kotlinx.coroutines.CoroutineScope
