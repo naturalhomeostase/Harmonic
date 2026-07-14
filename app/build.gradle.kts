@@ -35,6 +35,15 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        // APIs experimentais do Material3 (TopAppBar, ModalBottomSheet, etc.)
+        // são usadas o app inteiro — em vez de depender de lembrar o @OptIn
+        // em cada arquivo (foi exatamente isso que quebrou o build), liberamos
+        // globalmente aqui. Essas APIs já são consideradas estáveis na prática,
+        // só ainda carregam o rótulo "experimental" no Material3.
+        freeCompilerArgs += listOf(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi"
+        )
     }
 
     buildFeatures {
@@ -87,6 +96,10 @@ dependencies {
 
     // Accompanist — permissões em runtime
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
+
+    // Glance — widgets de tela inicial (Material You também nos widgets)
+    implementation("androidx.glance:glance-appwidget:1.1.0")
+    implementation("androidx.glance:glance-material3:1.1.0")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

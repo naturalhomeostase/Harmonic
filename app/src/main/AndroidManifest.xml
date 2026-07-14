@@ -53,5 +53,29 @@
             </intent-filter>
         </service>
 
+        <!-- Necessário pra compartilhar playlists exportadas em M3U com
+             outros apps (WhatsApp, Drive, e-mail, etc) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Widget de tela inicial -->
+        <receiver
+            android:name=".widget.HarmonicWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/harmonic_widget_info" />
+        </receiver>
+
     </application>
 </manifest>

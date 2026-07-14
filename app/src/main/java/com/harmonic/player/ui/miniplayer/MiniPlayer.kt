@@ -1,6 +1,5 @@
 package com.harmonic.player.ui.miniplayer
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,13 +48,12 @@ fun MiniPlayer(
                 .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Placeholder de capa — troca por AsyncImage(albumArtUri) quando
-            // o carregamento de capas embutidas entrar (fase 2)
-            Box(
+            // Capa real do álbum — cai no ícone de nota musical quando não há capa embutida.
+            com.harmonic.player.ui.common.AlbumArt(
+                song = song,
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
             )
 
             Spacer(Modifier.width(12.dp))

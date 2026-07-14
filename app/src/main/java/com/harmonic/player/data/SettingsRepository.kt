@@ -4,9 +4,12 @@ import android.content.Context
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "harmonic_settings")
+
+data class SavedQueueState(val songIds: List<Long>, val currentIndex: Int, val positionMs: Long)
 
 /** Fundos de tela padrão já embutidos no app (assets/default_wallpapers). */
 enum class DefaultWallpaper(val assetPath: String, val label: String) {
@@ -28,6 +31,22 @@ class SettingsRepository(private val context: Context) {
         val IGNORED_FOLDERS = stringSetPreferencesKey("ignored_folders")
         val CROSSFADE_MS = intPreferencesKey("crossfade_ms")
         val REPLAY_GAIN_ENABLED = booleanPreferencesKey("replay_gain_enabled")
+
+        // Equalizador
+        val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
+        val EQ_BAND_LEVELS = stringPreferencesKey("eq_band_levels") // CSV, um valor por banda (milibels)
+        val EQ_PRESET_NAME = stringPreferencesKey("eq_preset_name")
+        val BASS_BOOST_STRENGTH = intPreferencesKey("bass_boost_strength") // 0-1000
+        val VIRTUALIZER_STRENGTH = intPreferencesKey("virtualizer_strength") // 0-1000
+        val REVERB_PRESET = intPreferencesKey("reverb_preset") // índice do PresetReverb
+
+        // Fila persistente (restaurada quando o serviço reinicia)
+        val SAVED_QUEUE_IDS = stringPreferencesKey("saved_queue_ids") // CSV de Song.id
+        val SAVED_QUEUE_INDEX = intPreferencesKey("saved_queue_index")
+        val SAVED_QUEUE_POSITION_MS = longPreferencesKey("saved_queue_position_ms")
+
+        // Sleep timer
+        val SLEEP_TIMER_END_AT = longPreferencesKey("sleep_timer_end_at") // epoch ms, 0 = desativado
     }
 
     val accentColor: Flow<Int?> = context.dataStore.data.map { it[Keys.ACCENT_COLOR] }
@@ -79,5 +98,69 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setReplayGainEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.REPLAY_GAIN_ENABLED] = enabled }
+    }
+
+    // ---------- Equalizador ----------
+
+    val eqEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.EQ_ENABLED] ?: false }
+    val eqBandLevels: Flow<List<Int>> = context.dataStore.data.map { prefs ->
+        prefs[Keys.EQ_BAND_LEVELS]?.split(",")?.mapNotNull { it.toIntOrNull() } ?: List(10) { 0 }
+    }
+    val eqPresetName: Flow<String> = context.dataStore.data.map { it[Keys.EQ_PRESET_NAME] ?: "Personalizado" }
+    val bassBoostStrength: Flow<Int> = context.dataStore.data.map { it[Keys.BASS_BOOST_STRENGTH] ?: 0 }
+    val virtualizerStrength: Flow<Int> = context.dataStore.data.map { it[Keys.VIRTUALIZER_STRENGTH] ?: 0 }
+    val reverbPreset: Flow<Int> = context.dataStore.data.map { it[Keys.REVERB_PRESET] ?: 0 }
+
+    suspend fun setEqEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.EQ_ENABLED] = enabled }
+    }
+
+    suspend fun setEqBandLevels(levels: List<Int>, presetName: String = "Personalizado") {
+        context.dataStore.edit {
+            it[Keys.EQ_BAND_LEVELS] = levels.joinToString(",")
+            it[Keys.EQ_PRESET_NAME] = presetName
+        }
+    }
+
+    suspend fun setBassBoostStrength(strength: Int) {
+        context.dataStore.edit { it[Keys.BASS_BOOST_STRENGTH] = strength }
+    }
+
+    suspend fun setVirtualizerStrength(strength: Int) {
+        context.dataStore.edit { it[Keys.VIRTUALIZER_STRENGTH] = strength }
+    }
+
+    suspend fun setReverbPreset(preset: Int) {
+        context.dataStore.edit { it[Keys.REVERB_PRESET] = preset }
+    }
+
+    // ---------- Fila persistente ----------
+
+    suspend fun saveQueueState(songIds: List<Long>, currentIndex: Int, positionMs: Long) {
+        context.dataStore.edit {
+            it[Keys.SAVED_QUEUE_IDS] = songIds.joinToString(",")
+            it[Keys.SAVED_QUEUE_INDEX] = currentIndex
+            it[Keys.SAVED_QUEUE_POSITION_MS] = positionMs
+        }
+    }
+
+    suspend fun readSavedQueueState(): SavedQueueState? {
+        val prefs = context.dataStore.data.first()
+        val idsCsv = prefs[Keys.SAVED_QUEUE_IDS] ?: return null
+        val ids = idsCsv.split(",").mapNotNull { it.toLongOrNull() }
+        if (ids.isEmpty()) return null
+        return SavedQueueState(
+            songIds = ids,
+            currentIndex = prefs[Keys.SAVED_QUEUE_INDEX] ?: 0,
+            positionMs = prefs[Keys.SAVED_QUEUE_POSITION_MS] ?: 0L
+        )
+    }
+
+    // ---------- Sleep timer ----------
+
+    val sleepTimerEndAt: Flow<Long> = context.dataStore.data.map { it[Keys.SLEEP_TIMER_END_AT] ?: 0L }
+
+    suspend fun setSleepTimerEndAt(epochMs: Long) {
+        context.dataStore.edit { it[Keys.SLEEP_TIMER_END_AT] = epochMs }
     }
 }

@@ -59,6 +59,9 @@ interface SongDao {
     @Query("UPDATE songs SET playbackPositionMs = :positionMs WHERE id = :songId")
     suspend fun savePlaybackPosition(songId: Long, positionMs: Long)
 
+    @Query("SELECT * FROM songs WHERE id IN (:ids)")
+    suspend fun getSongsByIds(ids: List<Long>): List<Song>
+
     // ---------- Escaneamento ----------
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

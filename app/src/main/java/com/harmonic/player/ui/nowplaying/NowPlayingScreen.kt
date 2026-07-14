@@ -15,11 +15,33 @@ import androidx.compose.ui.unit.dp
 import com.harmonic.player.playback.PlayerController
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NowPlayingScreen(playerController: PlayerController, onBack: () -> Unit) {
+fun NowPlayingScreen(
+    playerController: PlayerController,
+    onBack: () -> Unit,
+    onOpenEqualizer: () -> Unit
+) {
     val state by playerController.uiState.collectAsState()
     var sliderPosition by remember { mutableStateOf(0f) }
     var isUserSeeking by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
+    var lyricsResult by remember { mutableStateOf<com.harmonic.player.data.LyricsResult>(com.harmonic.player.data.LyricsResult.NotFound) }
+
+    // Recarrega a letra sempre que a música atual mudar. A leitura do
+    // arquivo .lrc/.txt é rápida, mas ainda assim roda fora da thread
+    // principal pra nunca travar a UI.
+    LaunchedEffect(state.currentSong?.id) {
+        val song = state.currentSong
+        lyricsResult = if (song != null) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.harmonic.player.data.LyricsRepository.loadLyrics(song)
+            }
+        } else {
+            com.harmonic.player.data.LyricsResult.NotFound
+        }
+    }
 
     // Garante que a barra já abra na posição correta mesmo se a música
     // estiver pausada (antes, só atualizava dentro do loop de "tocando").
@@ -45,6 +67,26 @@ fun NowPlayingScreen(playerController: PlayerController, onBack: () -> Unit) {
                         Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Voltar")
                     }
                 },
+                actions = {
+                    IconButton(onClick = { showLyrics = !showLyrics }) {
+                        Icon(
+                            Icons.Filled.Subject,
+                            contentDescription = if (showLyrics) "Mostrar capa" else "Mostrar letra",
+                            tint = if (showLyrics) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                        )
+                    }
+                    IconButton(onClick = { showSleepTimerDialog = true }) {
+                        Icon(
+                            Icons.Filled.Bedtime,
+                            contentDescription = "Sleep timer",
+                            tint = if (state.sleepTimerEndAt != null) MaterialTheme.colorScheme.primary
+                                   else LocalContentColor.current
+                        )
+                    }
+                    IconButton(onClick = onOpenEqualizer) {
+                        Icon(Icons.Filled.Equalizer, contentDescription = "Equalizador")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
@@ -56,14 +98,26 @@ fun NowPlayingScreen(playerController: PlayerController, onBack: () -> Unit) {
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Capa do álbum (placeholder — Coil vai carregar a URI real do MediaStore)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-            )
+            // Alterna entre a capa do álbum e a letra sincronizada, conforme
+            // o botão na barra superior. A letra usa o espaço restante da
+            // tela (weight), a capa mantém proporção quadrada.
+            if (showLyrics) {
+                LyricsView(
+                    lyrics = lyricsResult,
+                    positionMs = sliderPosition.toLong(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+            } else {
+                com.harmonic.player.ui.common.AlbumArt(
+                    song = state.currentSong,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(24.dp))
+                )
+            }
 
             Spacer(Modifier.height(24.dp))
 
@@ -139,6 +193,67 @@ fun NowPlayingScreen(playerController: PlayerController, onBack: () -> Unit) {
             }
         }
     }
+
+    if (showSleepTimerDialog) {
+        SleepTimerDialog(
+            currentEndAt = state.sleepTimerEndAt,
+            onDismiss = { showSleepTimerDialog = false },
+            onSelectMinutes = { minutes ->
+                playerController.startSleepTimer(minutes)
+                showSleepTimerDialog = false
+            },
+            onSelectEndOfSong = {
+                playerController.stopAtEndOfSong()
+                showSleepTimerDialog = false
+            },
+            onCancel = {
+                playerController.cancelSleepTimer()
+                showSleepTimerDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun SleepTimerDialog(
+    currentEndAt: Long?,
+    onDismiss: () -> Unit,
+    onSelectMinutes: (Int) -> Unit,
+    onSelectEndOfSong: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val options = listOf(5, 10, 15, 30, 45, 60)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sleep timer") },
+        text = {
+            Column {
+                if (currentEndAt != null) {
+                    Text(
+                        "Timer ativo. Toque em \"Cancelar\" pra desativar.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                options.forEach { minutes ->
+                    TextButton(onClick = { onSelectMinutes(minutes) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("$minutes minutos", modifier = Modifier.fillMaxWidth())
+                    }
+                }
+                TextButton(onClick = onSelectEndOfSong, modifier = Modifier.fillMaxWidth()) {
+                    Text("Fim da música atual", modifier = Modifier.fillMaxWidth())
+                }
+            }
+        },
+        confirmButton = {
+            if (currentEndAt != null) {
+                TextButton(onClick = onCancel) { Text("Cancelar timer") }
+            } else {
+                TextButton(onClick = onDismiss) { Text("Fechar") }
+            }
+        }
+    )
 }
 
 /** Formata milissegundos como "m:ss", ex: 1234000ms -> "20:34". */

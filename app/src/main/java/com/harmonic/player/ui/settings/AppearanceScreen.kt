@@ -34,6 +34,7 @@ private val accentPresets = listOf(
     Color(0xFFB388FF) to "Neon lo-fi"
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()

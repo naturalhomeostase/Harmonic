@@ -3,34 +3,40 @@
 Player de música local para Android — rápido, offline, sem anúncios.
 Inspirado no Poweramp, com interface Material You.
 
-## Status: MVP (fase 1)
+## Status: Fase 3 em andamento
 
-O que já está implementado nesta base:
+Adicionado nesta leva:
 
-- ✅ Escaneamento automático da biblioteca via `MediaStore` (com observador de mudanças em tempo real)
-- ✅ Banco local com Room (músicas, playlists)
-- ✅ Reprodução em segundo plano via Media3 (`MediaSessionService` + `ExoPlayer`)
-  - Notificação com controles, tela bloqueada, resposta a botões Bluetooth/fone,
-    pausa automática ao desconectar áudio — tudo de graça via Media3, sem código manual
-- ✅ Tela de Biblioteca (abas: músicas, artistas, álbuns, gêneros, pastas, favoritas) + busca instantânea
-- ✅ Tela "Agora Tocando" com controles grandes, shuffle, repeat, seek
-- ✅ Material You (cor dinâmica no Android 12+) + cor de destaque customizável + 5 wallpapers padrão inclusos
-- ✅ Suporte nativo a MP3, FLAC, WAV, AAC, OGG, OPUS, M4A (via ExoPlayer)
+- ✅ Capa real do álbum (embutida no arquivo de áudio), com cache em memória —
+  aparece na Biblioteca, no mini player e em "Agora Tocando"; cai num ícone
+  de nota musical quando a música não tem capa
+- ✅ Letras sincronizadas (LRC) offline — procura automaticamente um arquivo
+  `.lrc` (sincronizado) ou `.txt` (simples) com o mesmo nome da música, na
+  mesma pasta; auto-scroll e destaque da linha atual em "Agora Tocando"
+- ✅ Widget de tela inicial (Glance) — mostra música atual + play/pause/
+  próxima/anterior, atualiza sozinho quando a música troca
 
-## O que falta (próximas fases — vamos construir juntos)
+## ⚠️ Nota de confiança sobre o widget
 
-- ⬜ Fila de reprodução persistente ("tocar em seguida", salvar/restaurar fila)
-- ⬜ Playlists (criar, editar, importar/exportar M3U)
-- ⬜ Equalizador de 10 bandas + Bass Boost + Virtualizador + Reverb (via `android.media.audiofx`)
-- ⬜ Letras sincronizadas (LRC), offline e busca online
-- ⬜ Widgets (pequeno/médio/grande) via Glance
-- ⬜ Editor de tags
-- ⬜ Sleep timer
-- ⬜ Crossfade + ReplayGain
-- ⬜ Android Auto
+O widget foi escrito usando a API do Glance (`androidx.glance:glance-appwidget`),
+que é bem menos comum que o Compose "normal" — por isso é a parte deste PR
+com **menor confiança de compilar de primeira**. Se o próximo build falhar
+especificamente em arquivos dentro de `widget/`, é o candidato nº 1 a
+investigar (nomes de parâmetros de `Row`/`Column`/`ColorProvider` no Glance
+podem estar levemente diferentes da versão 1.1.0 real). O resto do projeto
+(capa do álbum, letras) usa só Compose/Coil/MediaStore padrão, mais testado.
+
+## O que falta (continuando a fase 3)
+
+- ⬜ Crossfade + ReplayGain (mixagem de fato entre faixas)
+- ⬜ Android Auto (requer migrar de `MediaSessionService` pra `MediaLibraryService`)
 - ⬜ Visualizador de espectro/ondas
 - ⬜ Detecção de duplicatas e arquivos quebrados
-- ⬜ A-B Repeat, marcadores, "Wrapped" anual
+- ⬜ A-B Repeat, marcadores/bookmarks, "Wrapped" anual
+- ⬜ Editor de tags
+- ⬜ Busca de letras online (a busca offline já funciona)
+- ⬜ Presets de equalizador prontos (Rock, Pop, Jazz...)
+- ⬜ Widgets em outros tamanhos (hoje só tem um tamanho médio)
 
 ## Como compilar
 
