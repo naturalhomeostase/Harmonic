@@ -55,6 +55,7 @@ fun PlaylistsScreen(
                     ListItem(
                         leadingContent = { Icon(Icons.Filled.QueueMusic, contentDescription = null) },
                         headlineContent = { Text(playlist.name) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         modifier = Modifier.clickable { onOpenPlaylist(playlist.id) }
                     )
                 }

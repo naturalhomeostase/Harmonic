@@ -1,16 +1,23 @@
 package com.harmonic.player.ui.settings
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,28 +26,45 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.harmonic.player.data.DefaultWallpaper
 import com.harmonic.player.data.SettingsRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
-/** Cores de destaque prontas, cada uma combinando com um dos wallpapers padrão. */
+/** Paleta ampla de cores de destaque — cobre bem mais gostos do que os 5 originais. */
 private val accentPresets = listOf(
-    Color(0xFFFF7043) to "Chamas (leão)",
-    Color(0xFF29B6F6) to "Elétrico (guitarra)",
-    Color(0xFFF8BBD0) to "Vinil pastel",
-    Color(0xFF9C6ADE) to "Floresta mágica",
-    Color(0xFFB388FF) to "Neon lo-fi"
+    Color(0xFFFF7043), Color(0xFFFF5252), Color(0xFFEC407A), Color(0xFFAB47BC),
+    Color(0xFF7E57C2), Color(0xFF5C6BC0), Color(0xFF29B6F6), Color(0xFF26C6DA),
+    Color(0xFF26A69A), Color(0xFF66BB6A), Color(0xFF9CCC65), Color(0xFFD4E157),
+    Color(0xFFFFCA28), Color(0xFFFFA726), Color(0xFFF8BBD0), Color(0xFFB388FF)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     val currentWallpaper by settings.defaultWallpaper.collectAsState(initial = null)
+    val currentCustomBg by settings.backgroundUri.collectAsState(initial = null)
     val currentAccent by settings.accentColor.collectAsState(initial = null)
+    val blurEnabled by settings.backgroundBlurEnabled.collectAsState(initial = false)
+
+    var showCustomColorDialog by remember { mutableStateOf(false) }
+
+    val pickImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val savedPath = copyImageToInternalStorage(context, uri)
+                if (savedPath != null) settings.setCustomBackground(savedPath)
+            }
+        }
+    }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -56,12 +80,37 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
             Text("Cor de destaque", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                accentPresets.forEach { (color, _) ->
+
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 48.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.height(200.dp)
+            ) {
+                item {
+                    // Botão "+": abre o seletor de cor personalizada, com
+                    // liberdade total (RGB), em vez de ficar preso a presets.
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { showCustomColorDialog = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "Cor personalizada")
+                    }
+                }
+                items(accentPresets) { color ->
                     val isSelected = currentAccent == color.toArgb()
                     Box(
                         modifier = Modifier
@@ -80,10 +129,31 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(32.dp))
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Desfocar o fundo", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Deixa a imagem de fundo borrada, pra não competir com o texto.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = blurEnabled,
+                    onCheckedChange = { scope.launch { settings.setBackgroundBlurEnabled(it) } }
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
             Text("Imagem de fundo", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Escolha um dos fundos inclusos ou use uma imagem sua nas configurações avançadas.",
+                "Escolha um dos fundos inclusos ou uma foto da sua galeria.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -93,10 +163,49 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 columns = GridCells.Fixed(2),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.height(560.dp)
             ) {
+                item {
+                    // Card "Escolher da galeria" — sempre primeiro, pra ficar
+                    // fácil de achar.
+                    val isSelected = currentCustomBg != null
+                    Box(
+                        modifier = Modifier
+                            .aspectRatio(0.6f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { pickImageLauncher.launch("image/*") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected && currentCustomBg != null) {
+                            AsyncImage(
+                                model = Uri.parse(currentCustomBg),
+                                contentDescription = "Sua foto",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Filled.Photo, contentDescription = null)
+                                Spacer(Modifier.height(4.dp))
+                                Text("Da galeria", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
                 items(DefaultWallpaper.values().toList()) { wallpaper ->
-                    val isSelected = currentWallpaper == wallpaper.name
+                    val isSelected = currentCustomBg == null && currentWallpaper == wallpaper.name
                     Box(
                         modifier = Modifier
                             .aspectRatio(0.6f)
@@ -135,4 +244,79 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
             }
         }
     }
+
+    if (showCustomColorDialog) {
+        CustomColorPickerDialog(
+            initialColor = currentAccent?.let { Color(it) } ?: Color(0xFFFF7043),
+            onDismiss = { showCustomColorDialog = false },
+            onConfirm = { color ->
+                scope.launch { settings.setAccentColor(color.toArgb()) }
+                showCustomColorDialog = false
+            }
+        )
+    }
 }
+
+@Composable
+private fun CustomColorPickerDialog(
+    initialColor: Color,
+    onDismiss: () -> Unit,
+    onConfirm: (Color) -> Unit
+) {
+    var red by remember { mutableStateOf(initialColor.red) }
+    var green by remember { mutableStateOf(initialColor.green) }
+    var blue by remember { mutableStateOf(initialColor.blue) }
+    val previewColor = Color(red, green, blue)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cor personalizada") },
+        text = {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(previewColor)
+                )
+                Spacer(Modifier.height(16.dp))
+
+                Text("Vermelho", style = MaterialTheme.typography.labelMedium)
+                Slider(value = red, onValueChange = { red = it }, valueRange = 0f..1f)
+
+                Text("Verde", style = MaterialTheme.typography.labelMedium)
+                Slider(value = green, onValueChange = { green = it }, valueRange = 0f..1f)
+
+                Text("Azul", style = MaterialTheme.typography.labelMedium)
+                Slider(value = blue, onValueChange = { blue = it }, valueRange = 0f..1f)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(previewColor) }) { Text("Aplicar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+/**
+ * Copia a imagem escolhida na galeria pra dentro do armazenamento do
+ * próprio app. Isso evita depender da permissão da URI original, que pode
+ * expirar ou não sobreviver a um reinício do aparelho — copiando, o fundo
+ * escolhido continua funcionando pra sempre, exatamente como qualquer outra
+ * configuração salva.
+ */
+private suspend fun copyImageToInternalStorage(context: android.content.Context, uri: Uri): String? =
+    withContext(Dispatchers.IO) {
+        try {
+            val destFile = File(context.filesDir, "custom_background.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            destFile.toURI().toString()
+        } catch (e: Exception) {
+            null
+        }
+    }

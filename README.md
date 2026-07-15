@@ -16,7 +16,25 @@ Adicionado nesta leva:
 - ✅ Widget de tela inicial (Glance) — mostra música atual + play/pause/
   próxima/anterior, atualiza sozinho quando a música troca
 
-## ⚠️ Nota de confiança sobre o widget
+## Ajustes visuais (feedback do primeiro teste real no aparelho)
+
+- ✅ Fundo transparente atrás das listas (Biblioteca, Playlists) — antes cada
+  item tinha um fundo sólido escondendo o papel de parede
+- ✅ Mini player translúcido em vez de opaco
+- ✅ Tema padrão trocado de "sistema" pra "escuro" — se o celular está no
+  tema claro do sistema, mas o app sempre mostra uma foto de fundo escura,
+  o texto ficava escuro sobre fundo escuro (ilegível); título/artista pretos
+  na tela "Agora Tocando" era esse bug
+- ✅ Paleta de cores de destaque ampliada (16 cores) + seletor de cor
+  personalizada (RGB) — antes só 5 opções fixas
+- ✅ Opção de escolher qualquer foto da galeria como fundo (antes só os 5
+  wallpapers inclusos)
+- ✅ Opção de desfocar o fundo (blur) — só tem efeito real no Android 12+,
+  em versões mais antigas a imagem fica nítida mesmo com a opção ativada
+- ✅ Ícone de play/pause do mini player agora atualiza na hora (antes podia
+  ficar um instante mostrando o ícone errado até o player confirmar)
+
+
 
 O widget foi escrito usando a API do Glance (`androidx.glance:glance-appwidget`),
 que é bem menos comum que o Compose "normal" — por isso é a parte deste PR

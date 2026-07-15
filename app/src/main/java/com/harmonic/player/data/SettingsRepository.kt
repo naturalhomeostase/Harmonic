@@ -27,6 +27,7 @@ class SettingsRepository(private val context: Context) {
         val USE_ALBUM_ART_COLOR = booleanPreferencesKey("use_album_art_color")
         val BACKGROUND_URI = stringPreferencesKey("background_uri") // imagem custom do usuário
         val DEFAULT_WALLPAPER = stringPreferencesKey("default_wallpaper") // nome do enum acima
+        val BACKGROUND_BLUR_ENABLED = booleanPreferencesKey("background_blur_enabled")
         val THEME_MODE = stringPreferencesKey("theme_mode") // "light" | "dark" | "amoled" | "system"
         val IGNORED_FOLDERS = stringSetPreferencesKey("ignored_folders")
         val CROSSFADE_MS = intPreferencesKey("crossfade_ms")
@@ -53,7 +54,12 @@ class SettingsRepository(private val context: Context) {
     val useAlbumArtColor: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_ALBUM_ART_COLOR] ?: true }
     val backgroundUri: Flow<String?> = context.dataStore.data.map { it[Keys.BACKGROUND_URI] }
     val defaultWallpaper: Flow<String?> = context.dataStore.data.map { it[Keys.DEFAULT_WALLPAPER] }
-    val themeMode: Flow<String> = context.dataStore.data.map { it[Keys.THEME_MODE] ?: "system" }
+    val backgroundBlurEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.BACKGROUND_BLUR_ENABLED] ?: false }
+    // Padrão "dark", não "system": o app sempre mostra uma imagem de fundo
+    // com véu escuro por cima, então texto escuro (o que aconteceria no
+    // tema claro do sistema) fica ilegível. Continua possível escolher
+    // "light" manualmente se a pessoa realmente quiser.
+    val themeMode: Flow<String> = context.dataStore.data.map { it[Keys.THEME_MODE] ?: "dark" }
     val ignoredFolders: Flow<Set<String>> = context.dataStore.data.map { it[Keys.IGNORED_FOLDERS] ?: emptySet() }
     val crossfadeMs: Flow<Int> = context.dataStore.data.map { it[Keys.CROSSFADE_MS] ?: 0 }
     val replayGainEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.REPLAY_GAIN_ENABLED] ?: false }
@@ -78,6 +84,10 @@ class SettingsRepository(private val context: Context) {
             it[Keys.DEFAULT_WALLPAPER] = wallpaper.name
             it.remove(Keys.BACKGROUND_URI)
         }
+    }
+
+    suspend fun setBackgroundBlurEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.BACKGROUND_BLUR_ENABLED] = enabled }
     }
 
     suspend fun setThemeMode(mode: String) {

@@ -119,6 +119,7 @@ fun PlaylistDetailScreen(
                                 Icon(Icons.Filled.Close, contentDescription = "Remover da playlist")
                             }
                         },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         modifier = Modifier.clickable { onPlaySongs(songs, songs.indexOf(song)) }
                     )
                 }

@@ -34,6 +34,7 @@ fun MiniPlayer(
     val song = state.currentSong ?: return
 
     Surface(
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
         tonalElevation = 3.dp,
         shadowElevation = 8.dp,
         shape = RoundedCornerShape(16.dp),

@@ -203,6 +203,7 @@ fun LibraryScreen(
                         items(albums, key = { it.albumId }) { album ->
                             ListItem(
                                 headlineContent = { Text(album.album, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 modifier = Modifier.clickable {
                                     drilledGroup = album.album
                                     drilledAlbumId = album.albumId
@@ -291,6 +292,7 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
         items(items, key = { it }) { name ->
             ListItem(
                 headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 modifier = Modifier.clickable { onClick(name) }
             )
         }
@@ -338,6 +340,7 @@ private fun SongRow(song: Song, onClick: () -> Unit, onFavoriteToggle: () -> Uni
                 )
             }
         },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongPress)

@@ -135,7 +135,8 @@ class PlayerController(
         _uiState.value = _uiState.value.copy(
             queue = songs,
             currentSong = songs.getOrNull(startIndex),
-            currentIndex = startIndex
+            currentIndex = startIndex,
+            isPlaying = true // otimista: evita o ícone de play "atrasado" até o callback confirmar
         )
         controller?.setMediaItems(items, startIndex, 0L)
         controller?.prepare()
@@ -158,7 +159,14 @@ class PlayerController(
     }
 
     fun togglePlayPause() {
-        controller?.let { if (it.isPlaying) it.pause() else it.play() }
+        val c = controller ?: return
+        if (c.isPlaying) {
+            c.pause()
+            _uiState.value = _uiState.value.copy(isPlaying = false)
+        } else {
+            c.play()
+            _uiState.value = _uiState.value.copy(isPlaying = true)
+        }
     }
 
     fun skipNext() = controller?.seekToNextMediaItem()
