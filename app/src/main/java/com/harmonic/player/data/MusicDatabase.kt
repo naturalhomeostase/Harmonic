@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [Song::class, Playlist::class, PlaylistSongCrossRef::class],
-    version = 1,
+    entities = [Song::class, Playlist::class, PlaylistSongCrossRef::class, Bookmark::class],
+    version = 3,
     exportSchema = false
 )
 abstract class MusicDatabase : RoomDatabase() {
@@ -22,7 +22,12 @@ abstract class MusicDatabase : RoomDatabase() {
                     context.applicationContext,
                     MusicDatabase::class.java,
                     "harmonic_music.db"
-                ).build().also { INSTANCE = it }
+                )
+                    // App ainda não foi lançado publicamente — destruir e
+                    // recriar o banco numa mudança de schema é seguro (só
+                    // reescaneia a biblioteca do zero, não perde nada real).
+                    .fallbackToDestructiveMigration()
+                    .build().also { INSTANCE = it }
             }
     }
 }

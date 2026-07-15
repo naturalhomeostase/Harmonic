@@ -18,20 +18,56 @@ class MusicRepository(
     private val dao: SongDao,
     private val settings: SettingsRepository
 ) {
+    private var observingStarted = false
+
     fun startObserving(scope: CoroutineScope) {
+        if (observingStarted) return
+        observingStarted = true
         scope.launch { runScan() }
         scanner.observeChanges()
             .onEach { runScan() }
             .launchIn(scope)
     }
 
+    /**
+     * Força um novo escaneamento imediatamente — usado logo depois que o
+     * usuário concede a permissão de áudio pela primeira vez. Sem isso, o
+     * escaneamento inicial (que roda no Application.onCreate, antes da
+     * permissão existir) simplesmente não encontrava nada, e só um
+     * reinício completo do app rodava o scan de novo com a permissão já
+     * concedida — daí a sensação de "preciso reiniciar pra ver as músicas".
+     */
+    fun rescanNow(scope: CoroutineScope) {
+        scope.launch { runScan() }
+    }
+
     private suspend fun runScan() {
         val ignored = settings.ignoredFolders.first()
-        val songs = scanner.scan(ignoredFolders = ignored)
-        val current = songs.map { it.mediaStoreId }
-        val existingIds = dao.getAllMediaStoreIds()
-        val removed = existingIds - current.toSet()
+        val scanned = scanner.scan(ignoredFolders = ignored)
+        if (scanned.isEmpty()) return // provavelmente sem permissão ainda; não apaga nada do banco
+
+        // Mescla com o que já existe: preserva favoritos, contagem de
+        // reproduções, última vez tocada e posição salva — sem isso, cada
+        // re-scan "resetaria" essas informações mesmo a música sendo a
+        // mesma (só o `REPLACE` do SQLite recriando a linha do zero).
+        val existingByMediaStoreId = dao.getAllSongsOnce().associateBy { it.mediaStoreId }
+        val merged = scanned.map { fresh ->
+            val existing = existingByMediaStoreId[fresh.mediaStoreId]
+            if (existing != null) {
+                fresh.copy(
+                    id = existing.id,
+                    isFavorite = existing.isFavorite,
+                    playCount = existing.playCount,
+                    lastPlayedAt = existing.lastPlayedAt,
+                    playbackPositionMs = existing.playbackPositionMs
+                )
+            } else fresh
+        }
+
+        val currentIds = merged.map { it.mediaStoreId }.toSet()
+        val removed = existingByMediaStoreId.keys - currentIds
         if (removed.isNotEmpty()) dao.deleteByMediaStoreIds(removed.toList())
-        dao.insertAll(songs)
+
+        dao.insertAll(merged)
     }
 }

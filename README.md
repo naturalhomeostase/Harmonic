@@ -16,7 +16,35 @@ Adicionado nesta leva:
 - ✅ Widget de tela inicial (Glance) — mostra música atual + play/pause/
   próxima/anterior, atualiza sozinho quando a música troca
 
-## Ajustes visuais (feedback do primeiro teste real no aparelho)
+## Correções críticas (feedback do segundo teste)
+
+- ✅ **Músicas duplicando a cada abertura do app** — a tabela não tinha
+  índice único em `mediaStoreId`, então cada escaneamento inserida linhas
+  novas em vez de atualizar as existentes. Corrigido, e agora o
+  escaneamento também preserva favoritos/contagem de reprodução/posição
+  salva em vez de resetar tudo.
+- ✅ **Músicas não apareciam até reiniciar o app** — o primeiro
+  escaneamento rodava antes da permissão ser concedida (no
+  `Application.onCreate`), e nada disparava um novo escaneamento depois
+  que o usuário aceitava a permissão. Agora isso é automático.
+- ✅ **Player não aparecia na barra de notificação** — faltava pedir a
+  permissão de notificações em tempo de execução (obrigatória no Android
+  13+). Sem ela, o sistema simplesmente não mostra a notificação mesmo com
+  o player funcionando normalmente.
+
+## Visual (segunda rodada de ajustes)
+
+- ✅ Barras de título transparentes com o texto na cor de destaque
+- ✅ Sombra (escurecimento) sobre o fundo agora é ajustável por slider (0-90%)
+- ✅ Blur agora é ajustável por slider (0-40dp) em vez de switch liga/desliga
+  — e o padrão agora é 0 (nítido), já que o blur fixo anterior estava forte demais
+- ✅ Temas em gradiente (6 opções) que não dependem de nenhuma imagem — mais
+  leve, e agora é o fundo padrão do app quando nada foi escolhido
+- ✅ Título/artista na tela "Agora Tocando" com cores explícitas (destaque/branco)
+- ✅ Música tocando atualmente é destacada na lista da Biblioteca — ícone
+  (equalizador tocando/pausado) + texto na cor de destaque
+
+
 
 - ✅ Fundo transparente atrás das listas (Biblioteca, Playlists) — antes cada
   item tinha um fundo sólido escondendo o papel de parede

@@ -8,6 +8,9 @@ interface SongDao {
 
     // ---------- Biblioteca ----------
 
+    @Query("SELECT * FROM songs")
+    suspend fun getAllSongsOnce(): List<Song>
+
     @Query("SELECT * FROM songs ORDER BY title COLLATE NOCASE ASC")
     fun getAllSongs(): Flow<List<Song>>
 
@@ -97,6 +100,17 @@ interface SongDao {
 
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     suspend fun deletePlaylist(playlistId: Long)
+
+    // ---------- Marcadores (bookmarks) ----------
+
+    @Insert
+    suspend fun insertBookmark(bookmark: Bookmark): Long
+
+    @Query("SELECT * FROM bookmarks WHERE songId = :songId ORDER BY positionMs ASC")
+    fun getBookmarksForSong(songId: Long): Flow<List<Bookmark>>
+
+    @Query("DELETE FROM bookmarks WHERE id = :bookmarkId")
+    suspend fun deleteBookmark(bookmarkId: Long)
 }
 
 data class AlbumSummary(val album: String, val albumId: Long)

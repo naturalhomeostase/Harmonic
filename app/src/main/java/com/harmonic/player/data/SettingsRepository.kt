@@ -20,6 +20,21 @@ enum class DefaultWallpaper(val assetPath: String, val label: String) {
     LOFI_CITY("default_wallpapers/wallpaper_lofi_city.jpg", "Cidade lo-fi")
 }
 
+/**
+ * Temas em gradiente — não dependem de nenhuma imagem, então são muito mais
+ * leves (sem decodificar JPEG nenhum) e servem como fundo padrão do app.
+ * As cores são definidas como Long (ARGB) em vez de Color pra esse arquivo
+ * não precisar depender do Compose.
+ */
+enum class GradientTheme(val label: String, val colorsArgb: List<Long>) {
+    MIDNIGHT("Meia-noite", listOf(0xFF0F0C29, 0xFF302B63, 0xFF24243E)),
+    SUNSET("Pôr do sol", listOf(0xFFFF512F, 0xFFDD2476)),
+    OCEAN("Oceano", listOf(0xFF000428, 0xFF004E92)),
+    FOREST("Floresta", listOf(0xFF134E5E, 0xFF71B280)),
+    ROSE("Rosé", listOf(0xFF2C0E37, 0xFF6B2D5C, 0xFFB4548A)),
+    MONO("Mono (mais leve)", listOf(0xFF161616, 0xFF0A0A0A))
+}
+
 class SettingsRepository(private val context: Context) {
 
     private object Keys {
@@ -27,7 +42,10 @@ class SettingsRepository(private val context: Context) {
         val USE_ALBUM_ART_COLOR = booleanPreferencesKey("use_album_art_color")
         val BACKGROUND_URI = stringPreferencesKey("background_uri") // imagem custom do usuário
         val DEFAULT_WALLPAPER = stringPreferencesKey("default_wallpaper") // nome do enum acima
+        val GRADIENT_THEME = stringPreferencesKey("gradient_theme") // nome do enum GradientTheme
         val BACKGROUND_BLUR_ENABLED = booleanPreferencesKey("background_blur_enabled")
+        val BACKGROUND_BLUR_RADIUS = intPreferencesKey("background_blur_radius") // em dp, 0-40
+        val BACKGROUND_SCRIM_ALPHA = intPreferencesKey("background_scrim_alpha") // 0-100 (%)
         val THEME_MODE = stringPreferencesKey("theme_mode") // "light" | "dark" | "amoled" | "system"
         val IGNORED_FOLDERS = stringSetPreferencesKey("ignored_folders")
         val CROSSFADE_MS = intPreferencesKey("crossfade_ms")
@@ -54,7 +72,10 @@ class SettingsRepository(private val context: Context) {
     val useAlbumArtColor: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_ALBUM_ART_COLOR] ?: true }
     val backgroundUri: Flow<String?> = context.dataStore.data.map { it[Keys.BACKGROUND_URI] }
     val defaultWallpaper: Flow<String?> = context.dataStore.data.map { it[Keys.DEFAULT_WALLPAPER] }
+    val gradientTheme: Flow<String?> = context.dataStore.data.map { it[Keys.GRADIENT_THEME] }
     val backgroundBlurEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.BACKGROUND_BLUR_ENABLED] ?: false }
+    val backgroundBlurRadius: Flow<Int> = context.dataStore.data.map { it[Keys.BACKGROUND_BLUR_RADIUS] ?: 10 }
+    val backgroundScrimAlpha: Flow<Int> = context.dataStore.data.map { it[Keys.BACKGROUND_SCRIM_ALPHA] ?: 45 }
     // Padrão "dark", não "system": o app sempre mostra uma imagem de fundo
     // com véu escuro por cima, então texto escuro (o que aconteceria no
     // tema claro do sistema) fica ilegível. Continua possível escolher
@@ -76,6 +97,7 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit {
             it[Keys.BACKGROUND_URI] = uri
             it.remove(Keys.DEFAULT_WALLPAPER)
+            it.remove(Keys.GRADIENT_THEME)
         }
     }
 
@@ -83,11 +105,28 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit {
             it[Keys.DEFAULT_WALLPAPER] = wallpaper.name
             it.remove(Keys.BACKGROUND_URI)
+            it.remove(Keys.GRADIENT_THEME)
+        }
+    }
+
+    suspend fun setGradientTheme(theme: GradientTheme) {
+        context.dataStore.edit {
+            it[Keys.GRADIENT_THEME] = theme.name
+            it.remove(Keys.BACKGROUND_URI)
+            it.remove(Keys.DEFAULT_WALLPAPER)
         }
     }
 
     suspend fun setBackgroundBlurEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.BACKGROUND_BLUR_ENABLED] = enabled }
+    }
+
+    suspend fun setBackgroundBlurRadius(radiusDp: Int) {
+        context.dataStore.edit { it[Keys.BACKGROUND_BLUR_RADIUS] = radiusDp }
+    }
+
+    suspend fun setBackgroundScrimAlpha(alphaPercent: Int) {
+        context.dataStore.edit { it[Keys.BACKGROUND_SCRIM_ALPHA] = alphaPercent }
     }
 
     suspend fun setThemeMode(mode: String) {

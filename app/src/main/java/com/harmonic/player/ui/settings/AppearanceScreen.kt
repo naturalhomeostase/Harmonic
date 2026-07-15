@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -52,8 +53,10 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
     val currentWallpaper by settings.defaultWallpaper.collectAsState(initial = null)
     val currentCustomBg by settings.backgroundUri.collectAsState(initial = null)
+    val currentGradient by settings.gradientTheme.collectAsState(initial = null)
     val currentAccent by settings.accentColor.collectAsState(initial = null)
-    val blurEnabled by settings.backgroundBlurEnabled.collectAsState(initial = false)
+    val blurRadius by settings.backgroundBlurRadius.collectAsState(initial = 0)
+    val scrimAlpha by settings.backgroundScrimAlpha.collectAsState(initial = 45)
 
     var showCustomColorDialog by remember { mutableStateOf(false) }
 
@@ -70,7 +73,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Aparência") },
+                title = { Text("Aparência", color = MaterialTheme.colorScheme.primary) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
@@ -129,23 +132,73 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(32.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Text("Desfocar o fundo (blur)", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "0 = nítido. Só tem efeito real no Android 12 ou mais recente.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(
+                value = blurRadius.toFloat(),
+                onValueChange = { scope.launch { settings.setBackgroundBlurRadius(it.toInt()) } },
+                valueRange = 0f..40f
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Text("Sombra sobre o fundo", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Escurece a imagem/gradiente pra o texto ficar mais legível.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(
+                value = scrimAlpha.toFloat(),
+                onValueChange = { scope.launch { settings.setBackgroundScrimAlpha(it.toInt()) } },
+                valueRange = 0f..90f
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            Text("Gradientes (sem imagem, mais leve)", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(12.dp))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.height(180.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Desfocar o fundo", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Deixa a imagem de fundo borrada, pra não competir com o texto.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                items(com.harmonic.player.data.GradientTheme.values().toList()) { theme ->
+                    val isSelected = currentCustomBg == null && currentWallpaper == null && currentGradient == theme.name
+                    Box(
+                        modifier = Modifier
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Brush.linearGradient(theme.colorsArgb.map { Color(it) }))
+                            .clickable { scope.launch { settings.setGradientTheme(theme) } },
+                        contentAlignment = Alignment.BottomStart
+                    ) {
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(6.dp)
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        Text(
+                            theme.label,
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(6.dp)
+                        )
+                    }
                 }
-                Switch(
-                    checked = blurEnabled,
-                    onCheckedChange = { scope.launch { settings.setBackgroundBlurEnabled(it) } }
-                )
             }
 
             Spacer(Modifier.height(24.dp))

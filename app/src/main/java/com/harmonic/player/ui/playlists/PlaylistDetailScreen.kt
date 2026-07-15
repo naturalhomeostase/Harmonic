@@ -59,7 +59,7 @@ fun PlaylistDetailScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text(playlistName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = { Text(playlistName, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.primary) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")

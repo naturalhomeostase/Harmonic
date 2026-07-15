@@ -1,6 +1,8 @@
 package com.harmonic.player.ui.equalizer
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
@@ -12,7 +14,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.SettingsRepository
 import com.harmonic.player.playback.EqualizerController
+import com.harmonic.player.playback.equalizerPresets
 import com.harmonic.player.playback.reverbPresetNames
+import com.harmonic.player.playback.toBandLevels
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,7 +33,7 @@ fun EqualizerScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Equalizador") },
+                title = { Text("Equalizador", color = MaterialTheme.colorScheme.primary) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
@@ -67,6 +71,31 @@ fun EqualizerScreen(
                 .padding(padding)
                 .padding(16.dp)
         ) {
+            Text("Presets", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(equalizerPresets) { preset ->
+                    FilterChip(
+                        selected = false,
+                        onClick = {
+                            val newLevels = preset.toBandLevels(eqState.bands)
+                            newLevels.forEachIndexed { index, level ->
+                                equalizerController.setBandLevel(index, level)
+                            }
+                            scope.launch { settings.setEqBandLevels(newLevels, preset.name) }
+                            if (!eqState.enabled) {
+                                equalizerController.setEnabled(true)
+                                scope.launch { settings.setEqEnabled(true) }
+                            }
+                        },
+                        label = { Text(preset.name) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
             Text("Bandas de frequência", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
 

@@ -49,18 +49,24 @@ class MediaStoreScanner(private val context: Context) {
         val songs = mutableListOf<Song>()
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
 
-        context.contentResolver.query(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            projection,
-            selection,
-            null,
-            "${MediaStore.Audio.Media.DATE_ADDED} DESC"
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                val song = cursor.toSong() ?: continue
-                if (ignoredFolders.any { song.folder.startsWith(it) }) continue
-                songs += song
+        try {
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                "${MediaStore.Audio.Media.DATE_ADDED} DESC"
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val song = cursor.toSong() ?: continue
+                    if (ignoredFolders.any { song.folder.startsWith(it) }) continue
+                    songs += song
+                }
             }
+        } catch (e: SecurityException) {
+            // Ainda sem permissão de leitura de áudio — devolve lista vazia
+            // em vez de derrubar o app. O MusicRepository sabe não apagar
+            // nada do banco quando o scan vem vazio por esse motivo.
         }
         songs
     }

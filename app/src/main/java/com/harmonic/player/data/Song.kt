@@ -1,14 +1,20 @@
 package com.harmonic.player.data
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
  * Representa uma música indexada a partir do MediaStore do Android.
  * `mediaStoreId` é o id original do MediaStore, usado para detectar
  * duplicatas e músicas removidas do aparelho durante o re-scan.
+ *
+ * O índice único em `mediaStoreId` é essencial: sem ele, o Room não tem
+ * como saber que uma música "nova" encontrada num re-scan já existe na
+ * tabela (o `id` interno é autogerado e sempre seria diferente), e cada
+ * reinício do app duplicava todas as músicas na biblioteca.
  */
-@Entity(tableName = "songs")
+@Entity(tableName = "songs", indices = [Index(value = ["mediaStoreId"], unique = true)])
 data class Song(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val mediaStoreId: Long,

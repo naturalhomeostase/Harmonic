@@ -7,8 +7,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
@@ -102,7 +104,7 @@ fun LibraryScreen(
                                 .focusRequester(searchFocusRequester)
                         )
                     } else {
-                        Text("Harmonic")
+                        Text("Harmonic", color = MaterialTheme.colorScheme.primary)
                     }
                 },
                 navigationIcon = {
@@ -157,7 +159,9 @@ fun LibraryScreen(
                     songs = searchResults,
                     onSongClick = { onSongClick(searchResults, searchResults.indexOf(it)); onOpenNowPlaying() },
                     onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                    onLongPress = { songForOptions = it }
+                    onLongPress = { songForOptions = it },
+                    currentPlayingSongId = playbackState.currentSong?.id,
+                    isPlaying = playbackState.isPlaying
                 )
 
                 selectedTab == LibraryTab.SONGS -> {
@@ -166,7 +170,9 @@ fun LibraryScreen(
                         songs = songs,
                         onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
                         onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                        onLongPress = { songForOptions = it }
+                        onLongPress = { songForOptions = it },
+                        currentPlayingSongId = playbackState.currentSong?.id,
+                        isPlaying = playbackState.isPlaying
                     )
                 }
 
@@ -176,7 +182,9 @@ fun LibraryScreen(
                         songs = songs,
                         onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
                         onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                        onLongPress = { songForOptions = it }
+                        onLongPress = { songForOptions = it },
+                        currentPlayingSongId = playbackState.currentSong?.id,
+                        isPlaying = playbackState.isPlaying
                     )
                 }
 
@@ -192,7 +200,9 @@ fun LibraryScreen(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
                             onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                            onLongPress = { songForOptions = it }
+                            onLongPress = { songForOptions = it },
+                            currentPlayingSongId = playbackState.currentSong?.id,
+                            isPlaying = playbackState.isPlaying
                         )
                     }
                 }
@@ -220,7 +230,9 @@ fun LibraryScreen(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
                             onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                            onLongPress = { songForOptions = it }
+                            onLongPress = { songForOptions = it },
+                            currentPlayingSongId = playbackState.currentSong?.id,
+                            isPlaying = playbackState.isPlaying
                         )
                     }
                 }
@@ -237,7 +249,9 @@ fun LibraryScreen(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
                             onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                            onLongPress = { songForOptions = it }
+                            onLongPress = { songForOptions = it },
+                            currentPlayingSongId = playbackState.currentSong?.id,
+                            isPlaying = playbackState.isPlaying
                         )
                     }
                 }
@@ -254,7 +268,9 @@ fun LibraryScreen(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
                             onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                            onLongPress = { songForOptions = it }
+                            onLongPress = { songForOptions = it },
+                            currentPlayingSongId = playbackState.currentSong?.id,
+                            isPlaying = playbackState.isPlaying
                         )
                     }
                 }
@@ -304,7 +320,9 @@ private fun SongList(
     songs: List<Song>,
     onSongClick: (Song) -> Unit,
     onFavoriteToggle: (Song) -> Unit,
-    onLongPress: (Song) -> Unit
+    onLongPress: (Song) -> Unit,
+    currentPlayingSongId: Long? = null,
+    isPlaying: Boolean = false
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(songs, key = { it.id }) { song ->
@@ -312,7 +330,9 @@ private fun SongList(
                 song = song,
                 onClick = { onSongClick(song) },
                 onFavoriteToggle = { onFavoriteToggle(song) },
-                onLongPress = { onLongPress(song) }
+                onLongPress = { onLongPress(song) },
+                isCurrentlyPlaying = song.id == currentPlayingSongId,
+                isPlaying = isPlaying
             )
         }
     }
@@ -320,7 +340,15 @@ private fun SongList(
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun SongRow(song: Song, onClick: () -> Unit, onFavoriteToggle: () -> Unit, onLongPress: () -> Unit) {
+private fun SongRow(
+    song: Song,
+    onClick: () -> Unit,
+    onFavoriteToggle: () -> Unit,
+    onLongPress: () -> Unit,
+    isCurrentlyPlaying: Boolean = false,
+    isPlaying: Boolean = false
+) {
+    val accentColor = MaterialTheme.colorScheme.primary
     ListItem(
         leadingContent = {
             com.harmonic.player.ui.common.AlbumArt(
@@ -330,14 +358,42 @@ private fun SongRow(song: Song, onClick: () -> Unit, onFavoriteToggle: () -> Uni
                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
             )
         },
-        headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text("${song.artist} • ${song.album}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        headlineContent = {
+            Text(
+                song.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (isCurrentlyPlaying) accentColor else Color.White
+            )
+        },
+        supportingContent = {
+            Text(
+                "${song.artist} • ${song.album}",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (isCurrentlyPlaying) accentColor.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.7f)
+            )
+        },
         trailingContent = {
-            IconButton(onClick = onFavoriteToggle, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    imageVector = if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    contentDescription = "Favoritar"
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Indica visualmente qual música da lista está tocando
+                // agora — sem isso, era impossível saber só olhando a lista.
+                if (isCurrentlyPlaying) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Filled.Equalizer else Icons.Filled.Pause,
+                        contentDescription = if (isPlaying) "Tocando agora" else "Pausado",
+                        tint = accentColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                IconButton(onClick = onFavoriteToggle, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        imageVector = if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = "Favoritar",
+                        tint = if (song.isFavorite) accentColor else Color.White.copy(alpha = 0.7f)
+                    )
+                }
             }
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),

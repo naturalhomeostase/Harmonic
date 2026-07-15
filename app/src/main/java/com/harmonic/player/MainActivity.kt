@@ -17,7 +17,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.harmonic.player.playback.EqualizerController
 import com.harmonic.player.playback.PlayerController
 import com.harmonic.player.ui.common.AppBackground
@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val accentColorArgb by app.settings.accentColor.collectAsState(initial = null)
-            val themeModeStr by app.settings.themeMode.collectAsState(initial = "system")
+            val themeModeStr by app.settings.themeMode.collectAsState(initial = "dark")
 
             val themeMode = when (themeModeStr) {
                 "light" -> ThemeMode.LIGHT
@@ -55,27 +55,58 @@ class MainActivity : ComponentActivity() {
                 else -> ThemeMode.SYSTEM
             }
             val customAccent = accentColorArgb?.let { Color(it) }
+            val scope = rememberCoroutineScope()
 
             HarmonicTheme(themeMode = themeMode, customAccentColor = customAccent) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
                     AppBackground(settings = app.settings) {
-                        val audioPermission = rememberPermissionState(
-                            permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                                Manifest.permission.READ_MEDIA_AUDIO
-                            else Manifest.permission.READ_EXTERNAL_STORAGE
-                        )
+                        // Pedimos as duas permissões juntas: acesso ao áudio
+                        // (essencial pra biblioteca funcionar) e notificações
+                        // (essencial no Android 13+ pra aparecer o player na
+                        // barra de notificação — sem essa permissão, o
+                        // MediaSessionService cria a notificação mas o
+                        // sistema simplesmente não mostra ela).
+                        val permissions = buildList {
+                            add(
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                                    Manifest.permission.READ_MEDIA_AUDIO
+                                else Manifest.permission.READ_EXTERNAL_STORAGE
+                            )
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                add(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                        val permissionsState = rememberMultiplePermissionsState(permissions)
+
+                        val audioPermissionGranted = permissionsState.permissions.any {
+                            (it.permission == Manifest.permission.READ_MEDIA_AUDIO ||
+                             it.permission == Manifest.permission.READ_EXTERNAL_STORAGE) && it.status.isGranted
+                        }
 
                         LaunchedEffect(Unit) {
-                            if (!audioPermission.status.isGranted) {
-                                audioPermission.launchPermissionRequest()
+                            if (!audioPermissionGranted) {
+                                permissionsState.launchMultiplePermissionRequest()
                             }
                         }
 
-                        if (audioPermission.status.isGranted) {
+                        // Assim que a permissão de áudio for concedida (seja
+                        // porque já estava concedida, seja porque o usuário
+                        // acabou de aceitar), força um novo escaneamento.
+                        // Sem isso, a primeira leitura (que roda no
+                        // Application.onCreate, antes da permissão existir)
+                        // não encontra nada, e só um reinício completo do
+                        // app rodava o scan de novo já com permissão.
+                        LaunchedEffect(audioPermissionGranted) {
+                            if (audioPermissionGranted) {
+                                app.musicRepository.rescanNow(scope)
+                            }
+                        }
+
+                        if (audioPermissionGranted) {
                             HarmonicNavHost(playerController, app)
                         } else {
                             com.harmonic.player.ui.common.PermissionRationaleScreen(
-                                onRequestPermission = { audioPermission.launchPermissionRequest() }
+                                onRequestPermission = { permissionsState.launchMultiplePermissionRequest() }
                             )
                         }
                     }
@@ -139,6 +170,7 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
         composable("now_playing") {
             NowPlayingScreen(
                 playerController = playerController,
+                dao = app.database.songDao(),
                 onBack = { navController.popBackStack() },
                 onOpenEqualizer = { navController.navigate("equalizer") }
             )

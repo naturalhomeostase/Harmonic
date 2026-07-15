@@ -12,21 +12,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.harmonic.player.data.SongDao
 import com.harmonic.player.playback.PlayerController
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingScreen(
     playerController: PlayerController,
+    dao: SongDao,
     onBack: () -> Unit,
     onOpenEqualizer: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     val state by playerController.uiState.collectAsState()
     var sliderPosition by remember { mutableStateOf(0f) }
     var isUserSeeking by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
+    var showBookmarksSheet by remember { mutableStateOf(false) }
     var lyricsResult by remember { mutableStateOf<com.harmonic.player.data.LyricsResult>(com.harmonic.player.data.LyricsResult.NotFound) }
 
     // Recarrega a letra sempre que a música atual mudar. A leitura do
@@ -123,12 +129,13 @@ fun NowPlayingScreen(
 
             Text(
                 state.currentSong?.title ?: "Nada tocando",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary
             )
             Text(
                 state.currentSong?.artist ?: "",
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.White.copy(alpha = 0.85f)
             )
 
             // Info técnica: bitrate, formato, frequência
@@ -191,6 +198,55 @@ fun NowPlayingScreen(
                     Icon(Icons.Filled.Repeat, contentDescription = "Repetir")
                 }
             }
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = { playerController.setPointA() }) {
+                    Text(
+                        "A" + if (state.pointA != null) " ✓" else "",
+                        color = if (state.pointA != null) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                    )
+                }
+                TextButton(
+                    onClick = { playerController.setPointB() },
+                    enabled = state.pointA != null
+                ) {
+                    Text(
+                        "B" + if (state.pointB != null) " ✓" else "",
+                        color = if (state.pointB != null) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                    )
+                }
+                if (state.pointA != null || state.pointB != null) {
+                    IconButton(onClick = { playerController.clearABRepeat() }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Limpar A-B")
+                    }
+                }
+
+                Spacer(Modifier.width(16.dp))
+
+                IconButton(onClick = {
+                    val song = state.currentSong ?: return@IconButton
+                    scope.launch {
+                        dao.insertBookmark(
+                            com.harmonic.player.data.Bookmark(
+                                songId = song.id,
+                                positionMs = playerController.currentPositionMs(),
+                                label = formatDuration(playerController.currentPositionMs())
+                            )
+                        )
+                    }
+                }) {
+                    Icon(Icons.Filled.BookmarkAdd, contentDescription = "Adicionar marcador")
+                }
+                IconButton(onClick = { showBookmarksSheet = true }) {
+                    Icon(Icons.Filled.Bookmarks, contentDescription = "Ver marcadores")
+                }
+            }
         }
     }
 
@@ -211,6 +267,62 @@ fun NowPlayingScreen(
                 showSleepTimerDialog = false
             }
         )
+    }
+
+    if (showBookmarksSheet && state.currentSong != null) {
+        BookmarksSheet(
+            song = state.currentSong!!,
+            dao = dao,
+            onDismiss = { showBookmarksSheet = false },
+            onSeekTo = { positionMs ->
+                playerController.seekTo(positionMs)
+                showBookmarksSheet = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun BookmarksSheet(
+    song: com.harmonic.player.data.Song,
+    dao: SongDao,
+    onDismiss: () -> Unit,
+    onSeekTo: (Long) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val bookmarks by dao.getBookmarksForSong(song.id).collectAsState(initial = emptyList())
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.padding(bottom = 24.dp)) {
+            Text(
+                "Marcadores — ${song.title}",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            if (bookmarks.isEmpty()) {
+                Text(
+                    "Nenhum marcador salvo ainda. Toque no ícone de marcador\n" +
+                    "durante a reprodução pra guardar o instante atual.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                bookmarks.forEach { bookmark ->
+                    ListItem(
+                        headlineContent = { Text(bookmark.label) },
+                        leadingContent = { Icon(Icons.Filled.Bookmark, contentDescription = null) },
+                        trailingContent = {
+                            IconButton(onClick = { scope.launch { dao.deleteBookmark(bookmark.id) } }) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Remover marcador")
+                            }
+                        },
+                        modifier = Modifier.clickable { onSeekTo(bookmark.positionMs) }
+                    )
+                }
+            }
+        }
     }
 }
 

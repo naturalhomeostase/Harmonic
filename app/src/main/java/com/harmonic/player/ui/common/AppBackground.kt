@@ -8,61 +8,75 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.harmonic.player.data.DefaultWallpaper
+import com.harmonic.player.data.GradientTheme
 import com.harmonic.player.data.SettingsRepository
 
 /**
- * Desenha o papel de parede escolhido pelo usuário (um dos padrões
- * embutidos, uma foto própria escolhida da galeria) atrás de toda a
- * navegação, com um véu escuro semi-transparente por cima pra garantir
- * contraste do texto, e blur opcional.
+ * Desenha o fundo do app inteiro: uma imagem (padrão ou escolhida da
+ * galeria) ou um gradiente (mais leve, sem decodificar nenhuma imagem —
+ * por isso é o padrão de fábrica do app). Sombra e blur são ajustáveis
+ * pelo usuário nas configurações de Aparência.
  *
  * Aplicado uma única vez, no topo da árvore de composição: cada tela usa
  * `containerColor = Color.Transparent` no Scaffold, e cada item de lista
- * usa fundo transparente, pra deixar esse fundo aparecer atrás de tudo em
- * vez de cada elemento desenhar seu próprio fundo opaco por cima.
+ * usa fundo transparente, pra deixar esse fundo aparecer atrás de tudo.
  *
  * Nota: o blur (`Modifier.blur`) só tem efeito real no Android 12+ (API 31+)
  * — em aparelhos mais antigos a chamada não quebra nada, só não borra a
- * imagem, já que a API de blur nativo do Compose depende do RenderEffect
- * do sistema, que não existe em versões anteriores.
+ * imagem, já que depende do RenderEffect do sistema.
  */
 @Composable
 fun AppBackground(settings: SettingsRepository, content: @Composable () -> Unit) {
     val defaultWallpaperName by settings.defaultWallpaper.collectAsState(initial = null)
     val customBackgroundUri by settings.backgroundUri.collectAsState(initial = null)
-    val blurEnabled by settings.backgroundBlurEnabled.collectAsState(initial = false)
+    val gradientThemeName by settings.gradientTheme.collectAsState(initial = null)
+    val blurRadius by settings.backgroundBlurRadius.collectAsState(initial = 0)
+    val scrimAlphaPercent by settings.backgroundScrimAlpha.collectAsState(initial = 45)
 
     Box(modifier = Modifier.fillMaxSize()) {
-        val model: Any? = when {
+        val imageModel: Any? = when {
             customBackgroundUri != null -> customBackgroundUri
             defaultWallpaperName != null ->
                 DefaultWallpaper.values().find { it.name == defaultWallpaperName }
                     ?.let { "file:///android_asset/${it.assetPath}" }
-            // Enquanto o usuário não escolhe nada, mostra um dos wallpapers
-            // inclusos por padrão — uma tela preta lisa no primeiro uso
-            // pareceria um bug, não uma escolha de design.
-            else -> "file:///android_asset/${DefaultWallpaper.LION_FIRE.assetPath}"
+            else -> null
         }
 
-        if (model != null) {
+        if (imageModel != null) {
             AsyncImage(
-                model = model,
+                model = imageModel,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(if (blurEnabled) Modifier.blur(28.dp) else Modifier)
+                    .then(if (blurRadius > 0) Modifier.blur(blurRadius.dp) else Modifier)
             )
-            // Véu escuro pra garantir legibilidade do texto sobre a imagem
+        } else {
+            // Sem imagem escolhida: gradiente como padrão (mais leve — sem
+            // decodificar JPEG nenhum). Usa o tema salvo, ou "Meia-noite"
+            // se o usuário nunca mexeu nisso.
+            val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.MIDNIGHT
+            val colors = theme.colorsArgb.map { Color(it) }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.45f))
+                    .background(Brush.linearGradient(colors))
+                    .then(if (blurRadius > 0) Modifier.blur(blurRadius.dp) else Modifier)
+            )
+        }
+
+        // Véu escuro ajustável pra garantir legibilidade do texto sobre o fundo
+        if (scrimAlphaPercent > 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = scrimAlphaPercent / 100f))
             )
         }
 

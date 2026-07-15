@@ -32,7 +32,10 @@ data class PlaybackUiState(
     val currentIndex: Int = -1,
     // Sleep timer: null = desativado, -1 = "parar no fim da música atual"
     val sleepTimerEndAt: Long? = null,
-    val sleepTimerRemainingMs: Long = 0
+    val sleepTimerRemainingMs: Long = 0,
+    // A-B Repeat: repete só o trecho entre os dois pontos, em loop
+    val pointA: Long? = null,
+    val pointB: Long? = null
 )
 
 /**
@@ -66,6 +69,7 @@ class PlayerController(
             // a lista de Song correspondente pra UI mostrar corretamente.
             resolveQueueFromControllerIfNeeded()
             startPeriodicPositionSave()
+            startABRepeatMonitor()
             onConnected()
         }, MoreExecutors.directExecutor())
     }
@@ -213,6 +217,40 @@ class PlayerController(
                 currentIndex = state.currentIndex.coerceAtLeast(0),
                 positionMs = currentPositionMs()
             )
+        }
+    }
+
+    // ---------- A-B Repeat ----------
+
+    /** Marca o ponto A na posição atual da música. */
+    fun setPointA() {
+        _uiState.value = _uiState.value.copy(pointA = currentPositionMs(), pointB = null)
+    }
+
+    /** Marca o ponto B na posição atual — a partir daqui o trecho A-B repete em loop. */
+    fun setPointB() {
+        val a = _uiState.value.pointA ?: return
+        val b = currentPositionMs()
+        if (b <= a) return // B precisa vir depois de A, senão ignora
+        _uiState.value = _uiState.value.copy(pointB = b)
+    }
+
+    fun clearABRepeat() {
+        _uiState.value = _uiState.value.copy(pointA = null, pointB = null)
+    }
+
+    /** Roda durante toda a vida do controller, verificando o A-B repeat periodicamente. */
+    private fun startABRepeatMonitor() {
+        scope.launch {
+            while (true) {
+                delay(200)
+                val state = _uiState.value
+                val a = state.pointA
+                val b = state.pointB
+                if (a != null && b != null && currentPositionMs() >= b) {
+                    controller?.seekTo(a)
+                }
+            }
         }
     }
 
