@@ -1,6 +1,5 @@
 package com.harmonic.player.ui.miniplayer
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,14 +9,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.harmonic.player.playback.PlaybackUiState
@@ -26,13 +20,6 @@ import com.harmonic.player.playback.PlaybackUiState
  * Barra fixa com a música atual — fica visível em qualquer lugar da
  * Biblioteca, permitindo pausar/pular sem precisar abrir "Agora Tocando".
  * Toque em qualquer área fora dos botões abre a tela cheia.
- *
- * O fundo é uma vinheta radial (mais escura perto da capa, 100%
- * transparente nas bordas) em vez de um card sólido — assim ele se
- * integra com o fundo do app em vez de flutuar como uma caixa escura por
- * cima. O título usa um gradiente na direção OPOSTA à vinheta (mais claro
- * onde o fundo está mais escuro, mais sutil onde o fundo já clareou),
- * pra manter a legibilidade em vez de competir com o fundo.
  *
  * Retorna null (não desenha nada) quando não há música tocando, para não
  * ocupar espaço à toa na tela.
@@ -45,35 +32,19 @@ fun MiniPlayer(
     onOpenNowPlaying: () -> Unit
 ) {
     val song = state.currentSong ?: return
-    val density = LocalDensity.current
 
-    // Gradiente do título: branco cheio à esquerda (onde a vinheta do fundo
-    // é mais escura) esmaecendo pra menos opaco à direita (onde a vinheta
-    // já sumiu e o fundo original do app aparece por trás) — contraste
-    // sempre no sentido contrário ao da vinheta, pra continuar legível não
-    // importa a cor por trás.
-    val titleBrush = remember { Brush.horizontalGradient(listOf(Color.White, Color.White.copy(alpha = 0.5f))) }
-
-    BoxWithConstraints(
+    Surface(
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+        tonalElevation = 3.dp,
+        shadowElevation = 8.dp,
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        val widthPx = with(density) { maxWidth.toPx() }
-        val heightPx = with(density) { maxHeight.toPx() }
-        val vignetteBrush = remember(widthPx, heightPx) {
-            Brush.radialGradient(
-                colors = listOf(Color.Black.copy(alpha = 0.6f), Color.Black.copy(alpha = 0f)),
-                center = Offset(widthPx * 0.24f, heightPx * 0.5f),
-                radius = (widthPx * 0.85f).coerceAtLeast(1f)
-            )
-        }
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(vignetteBrush)
                 .clickable(onClick = onOpenNowPlaying)
                 .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -93,14 +64,14 @@ fun MiniPlayer(
                     song.title,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyLarge.copy(brush = titleBrush)
+                    style = MaterialTheme.typography.bodyLarge
                 )
                 Text(
                     song.artist,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -109,12 +80,11 @@ fun MiniPlayer(
             IconButton(onClick = onTogglePlayPause, modifier = Modifier.size(48.dp)) {
                 Icon(
                     imageVector = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (state.isPlaying) "Pausar" else "Tocar",
-                    tint = Color.White
+                    contentDescription = if (state.isPlaying) "Pausar" else "Tocar"
                 )
             }
             IconButton(onClick = onSkipNext, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Filled.SkipNext, contentDescription = "Próxima", tint = Color.White.copy(alpha = 0.9f))
+                Icon(Icons.Filled.SkipNext, contentDescription = "Próxima")
             }
         }
     }

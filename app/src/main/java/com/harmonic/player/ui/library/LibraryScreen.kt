@@ -1,20 +1,13 @@
 package com.harmonic.player.ui.library
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
@@ -82,13 +75,16 @@ fun LibraryScreen(
     // padrão "Meia-noite" quando o fundo é uma imagem, já que aí não existe
     // uma paleta de gradiente selecionada).
     val titleGradientEnabled by settings.titleGradientEnabled.collectAsState(initial = false)
+    val titleGradientMode by settings.titleGradientMode.collectAsState(initial = "theme")
     val gradientThemeName by settings.gradientTheme.collectAsState(initial = null)
-    val titleGradientColorStart by settings.titleGradientColorStart.collectAsState(initial = null)
-    val titleGradientColorEnd by settings.titleGradientColorEnd.collectAsState(initial = null)
+    val accentColorArgb by settings.accentColor.collectAsState(initial = null)
     val titleBrush = if (titleGradientEnabled) {
-        if (titleGradientColorStart != null && titleGradientColorEnd != null) {
-            // Cores escolhidas livremente pelo usuário na roda de cores.
-            Brush.linearGradient(listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!)))
+        if (titleGradientMode == "monochrome") {
+            val base = accentColorArgb?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
+            // Tom único: da própria cor de destaque (mais escura) até uma
+            // versão bem mais clara dela — discreto, funciona em cima de
+            // qualquer fundo, inclusive foto.
+            Brush.linearGradient(listOf(base.copy(alpha = 0.75f), lightenColor(base, 0.55f)))
         } else {
             val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.MIDNIGHT
             Brush.linearGradient(theme.colorsArgb.map { Color(it) })
@@ -361,6 +357,14 @@ fun LibraryScreen(
     }
 }
 
+/** Clareia uma cor em direção ao branco, por um fator de 0 (sem mudança) a 1 (vira branco). */
+private fun lightenColor(color: Color, factor: Float): Color = Color(
+    red = color.red + (1f - color.red) * factor,
+    green = color.green + (1f - color.green) * factor,
+    blue = color.blue + (1f - color.blue) * factor,
+    alpha = color.alpha
+)
+
 @Composable
 private fun GroupHeader(title: String, onBack: () -> Unit) {
     Row(
@@ -411,49 +415,6 @@ private fun SongList(
                 onLongPress = { onLongPress(song) },
                 isCurrentlyPlaying = song.id == currentPlayingSongId,
                 isPlaying = isPlaying
-            )
-        }
-    }
-}
-
-/**
- * Três barrinhas verticais que sobem e descem em loop, tipo um equalizer de
- * verdade — cada barra com sua própria duração/fase, pra não ficarem
- * "batendo" juntas de forma óbvia e mecânica. Só é chamado quando a música
- * está de fato tocando (ver SongRow); quando pausada, cai no ícone estático.
- */
-@Composable
-private fun AnimatedEqualizerBars(color: Color, modifier: Modifier = Modifier) {
-    val infiniteTransition = rememberInfiniteTransition(label = "eq")
-    val bar1 by infiniteTransition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(420, easing = LinearEasing), RepeatMode.Reverse),
-        label = "eqBar1"
-    )
-    val bar2 by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.3f,
-        animationSpec = infiniteRepeatable(tween(560, easing = LinearEasing), RepeatMode.Reverse),
-        label = "eqBar2"
-    )
-    val bar3 by infiniteTransition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 0.9f,
-        animationSpec = infiniteRepeatable(tween(340, easing = LinearEasing), RepeatMode.Reverse),
-        label = "eqBar3"
-    )
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.Bottom
-    ) {
-        listOf(bar1, bar2, bar3).forEach { fraction ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(fraction.coerceIn(0.15f, 1f))
-                    .background(color, RoundedCornerShape(1.dp))
             )
         }
     }
@@ -513,19 +474,12 @@ private fun SongRow(
                 // Indica visualmente qual música da lista está tocando
                 // agora — sem isso, era impossível saber só olhando a lista.
                 if (isCurrentlyPlaying) {
-                    if (isPlaying) {
-                        AnimatedEqualizerBars(
-                            color = accentColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.Pause,
-                            contentDescription = "Pausado",
-                            tint = accentColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Filled.Equalizer else Icons.Filled.Pause,
+                        contentDescription = if (isPlaying) "Tocando agora" else "Pausado",
+                        tint = accentColor,
+                        modifier = Modifier.size(20.dp)
+                    )
                     Spacer(Modifier.width(4.dp))
                 }
                 IconButton(onClick = onFavoriteToggle, modifier = Modifier.size(48.dp)) {
