@@ -143,12 +143,18 @@ fun LibraryScreen(
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
 
             if (searchQuery.isBlank()) {
-                ScrollableTabRow(selectedTabIndex = selectedTab.ordinal) {
+                ScrollableTabRow(
+                    selectedTabIndex = selectedTab.ordinal,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary
+                ) {
                     LibraryTab.values().forEach { tab ->
                         Tab(
                             selected = selectedTab == tab,
                             onClick = { selectedTab = tab },
-                            text = { Text(tab.label) }
+                            text = { Text(tab.label) },
+                            selectedContentColor = MaterialTheme.colorScheme.primary,
+                            unselectedContentColor = Color.White.copy(alpha = 0.7f)
                         )
                     }
                 }
@@ -299,7 +305,13 @@ private fun GroupHeader(title: String, onBack: () -> Unit) {
         IconButton(onClick = onBack) {
             Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
         }
-        Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -427,6 +439,7 @@ private fun SongOptionsSheet(
             Text(
                 song.title,
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 16.dp)

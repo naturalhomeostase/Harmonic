@@ -2,18 +2,17 @@ package com.harmonic.player.ui.common
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -31,8 +30,9 @@ private val albumArtCache = object : LinkedHashMap<Long, Bitmap?>(64, 0.75f, tru
 
 /**
  * Mostra a capa real do álbum (embutida no arquivo de áudio) ou, se a
- * música não tiver capa, um placeholder com ícone de nota musical — nunca
- * uma área em branco, pra manter a interface consistente.
+ * música não tiver capa, um ícone discreto de nota musical sobre fundo
+ * transparente — deixando o papel de parede/gradiente do app aparecer por
+ * trás, em vez de uma caixa cinza sólida quebrando a continuidade visual.
  */
 @Composable
 fun AlbumArt(song: Song?, modifier: Modifier = Modifier) {
@@ -54,7 +54,7 @@ fun AlbumArt(song: Song?, modifier: Modifier = Modifier) {
     }
 
     Box(
-        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {
@@ -68,7 +68,7 @@ fun AlbumArt(song: Song?, modifier: Modifier = Modifier) {
             Icon(
                 Icons.Filled.MusicNote,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = Color.White.copy(alpha = 0.6f),
                 modifier = Modifier.fillMaxSize(0.4f)
             )
         }

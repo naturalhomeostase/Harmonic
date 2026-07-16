@@ -90,7 +90,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Text("Cor de destaque", style = MaterialTheme.typography.titleMedium)
+            Text("Cor de destaque", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(12.dp))
 
             LazyVerticalGrid(
@@ -132,7 +132,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(32.dp))
 
-            Text("Desfocar o fundo (blur)", style = MaterialTheme.typography.titleMedium)
+            Text("Desfocar o fundo (blur)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Text(
                 "0 = nítido. Só tem efeito real no Android 12 ou mais recente.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -146,7 +146,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
-            Text("Sombra sobre o fundo", style = MaterialTheme.typography.titleMedium)
+            Text("Sombra sobre o fundo", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Text(
                 "Escurece a imagem/gradiente pra o texto ficar mais legível.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -160,7 +160,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(24.dp))
 
-            Text("Gradientes (sem imagem, mais leve)", style = MaterialTheme.typography.titleMedium)
+            Text("Gradientes (sem imagem, mais leve)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(12.dp))
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
@@ -203,7 +203,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(24.dp))
 
-            Text("Imagem de fundo", style = MaterialTheme.typography.titleMedium)
+            Text("Imagem de fundo", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(4.dp))
             Text(
                 "Escolha um dos fundos inclusos ou uma foto da sua galeria.",

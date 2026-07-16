@@ -71,7 +71,7 @@ fun EqualizerScreen(
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            Text("Presets", style = MaterialTheme.typography.titleMedium)
+            Text("Presets", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -96,7 +96,7 @@ fun EqualizerScreen(
             }
 
             Spacer(Modifier.height(20.dp))
-            Text("Bandas de frequência", style = MaterialTheme.typography.titleMedium)
+            Text("Bandas de frequência", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(12.dp))
 
             Row(
@@ -136,7 +136,7 @@ fun EqualizerScreen(
             HorizontalDivider()
             Spacer(Modifier.height(16.dp))
 
-            Text("Bass Boost", style = MaterialTheme.typography.titleMedium)
+            Text("Bass Boost", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Slider(
                 value = eqState.bassBoostStrength.toFloat(),
                 onValueChange = { equalizerController.setBassBoostStrength(it.toInt()) },
@@ -146,7 +146,7 @@ fun EqualizerScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            Text("Virtualizador (efeito surround)", style = MaterialTheme.typography.titleMedium)
+            Text("Virtualizador (efeito surround)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Slider(
                 value = eqState.virtualizerStrength.toFloat(),
                 onValueChange = { equalizerController.setVirtualizerStrength(it.toInt()) },
@@ -156,7 +156,7 @@ fun EqualizerScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            Text("Reverb", style = MaterialTheme.typography.titleMedium)
+            Text("Reverb", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(4.dp))
             var reverbMenuExpanded by remember { mutableStateOf(false) }
             Box {

@@ -18,7 +18,7 @@ fun PermissionRationaleScreen(onRequestPermission: () -> Unit) {
     ) {
         Icon(Icons.Filled.LibraryMusic, contentDescription = null, modifier = Modifier.size(72.dp))
         Spacer(Modifier.height(24.dp))
-        Text("Acesso à sua música", style = MaterialTheme.typography.titleLarge)
+        Text("Acesso à sua música", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(8.dp))
         Text(
             "O Harmonic precisa ler os arquivos de áudio do seu aparelho para montar sua biblioteca. " +

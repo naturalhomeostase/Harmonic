@@ -298,6 +298,7 @@ private fun BookmarksSheet(
             Text(
                 "Marcadores — ${song.title}",
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
             Spacer(Modifier.height(8.dp))
