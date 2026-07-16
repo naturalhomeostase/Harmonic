@@ -4,10 +4,13 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -57,6 +60,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
     val currentAccent by settings.accentColor.collectAsState(initial = null)
     val blurRadius by settings.backgroundBlurRadius.collectAsState(initial = 0)
     val scrimAlpha by settings.backgroundScrimAlpha.collectAsState(initial = 45)
+    val titleGradientEnabled by settings.titleGradientEnabled.collectAsState(initial = false)
 
     var showCustomColorDialog by remember { mutableStateOf(false) }
 
@@ -161,20 +165,53 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
             Spacer(Modifier.height(24.dp))
 
             Text("Gradientes (sem imagem, mais leve)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text(
+                "Toque em um tema para aplicar — o preview acima mostra exatamente como o app vai ficar.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(12.dp))
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+
+            // Preview "printscreen" ao vivo: reflete o estado real das
+            // configurações (gradiente/imagem, blur, sombra e gradiente de
+            // texto), então ele já reage assim que o usuário toca em outro
+            // tema logo abaixo — sem precisar de nenhum estado paralelo.
+            AppearancePreviewMockup(
+                gradientTheme = com.harmonic.player.data.GradientTheme.values()
+                    .find { it.name == currentGradient } ?: com.harmonic.player.data.GradientTheme.MIDNIGHT,
+                useImageBackground = currentWallpaper != null || currentCustomBg != null,
+                imageModel = currentCustomBg ?: currentWallpaper?.let {
+                    "file:///android_asset/${com.harmonic.player.data.DefaultWallpaper.valueOf(it).assetPath}"
+                },
+                accentColor = currentAccent?.let { Color(it) } ?: MaterialTheme.colorScheme.primary,
+                scrimAlphaPercent = scrimAlpha,
+                titleGradientEnabled = titleGradientEnabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.62f)
+                    .align(Alignment.CenterHorizontally)
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // Linha horizontal de temas — rolagem lateral em vez da grade
+            // vertical de antes, deixando o preview acima como protagonista.
+            androidx.compose.foundation.lazy.LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.height(180.dp)
+                contentPadding = PaddingValues(vertical = 4.dp)
             ) {
                 items(com.harmonic.player.data.GradientTheme.values().toList()) { theme ->
                     val isSelected = currentCustomBg == null && currentWallpaper == null && currentGradient == theme.name
                     Box(
                         modifier = Modifier
-                            .aspectRatio(1f)
+                            .size(width = 84.dp, height = 96.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .background(Brush.linearGradient(theme.colorsArgb.map { Color(it) }))
+                            .then(
+                                if (isSelected)
+                                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+                                else Modifier
+                            )
                             .clickable { scope.launch { settings.setGradientTheme(theme) } },
                         contentAlignment = Alignment.BottomStart
                     ) {
@@ -183,22 +220,47 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .padding(6.dp)
-                                    .size(22.dp)
+                                    .size(20.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.primary),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
                             }
                         }
                         Text(
                             theme.label,
                             color = Color.White,
                             style = MaterialTheme.typography.labelSmall,
+                            maxLines = 2,
                             modifier = Modifier.padding(6.dp)
                         )
                     }
                 }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // Opção de aplicar o mesmo gradiente também no texto dos
+            // títulos das listas (em vez de só no fundo) — fica a critério
+            // do usuário, já que nem todo mundo gosta do efeito em texto.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("Gradiente também nos títulos", style = MaterialTheme.typography.titleSmall, color = Color.White)
+                    Text(
+                        "Usa as cores do tema acima no título das músicas nas listas, em vez de branco sólido.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = titleGradientEnabled,
+                    onCheckedChange = { scope.launch { settings.setTitleGradientEnabled(it) } }
+                )
             }
 
             Spacer(Modifier.height(24.dp))
@@ -307,6 +369,124 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 showCustomColorDialog = false
             }
         )
+    }
+}
+
+/**
+ * Mini "printscreen" ao vivo de como a Biblioteca fica com as configurações
+ * atuais: mesmo fundo (imagem ou gradiente + blur/sombra), mesma cor de
+ * destaque, e até o gradiente no título das músicas, se ativado — tudo
+ * numa moldura de tela pra dar a sensação de preview real do app.
+ */
+@Composable
+private fun AppearancePreviewMockup(
+    gradientTheme: com.harmonic.player.data.GradientTheme,
+    useImageBackground: Boolean,
+    imageModel: Any?,
+    accentColor: Color,
+    scrimAlphaPercent: Int,
+    titleGradientEnabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val fakeSongs = listOf("Noite sem fim" to "Coletivo Aurora", "Deriva" to "Baía Sul", "Eco de vidro" to "Marte 91")
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(28.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(28.dp))
+    ) {
+        // Fundo: mesma lógica do AppBackground de verdade (imagem crop, ou gradiente)
+        if (useImageBackground && imageModel != null) {
+            AsyncImage(
+                model = imageModel,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Brush.linearGradient(gradientTheme.colorsArgb.map { Color(it) }))
+            )
+        }
+
+        if (scrimAlphaPercent > 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = scrimAlphaPercent / 100f))
+            )
+        }
+
+        Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
+            Text("Harmonic", color = accentColor, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(10.dp))
+
+            // Abinha falsa, só pra dar o contexto visual do menu horizontal
+            Row {
+                Text(
+                    "Músicas",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    "Artistas",
+                    color = Color.White.copy(alpha = 0.55f),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .padding(top = 2.dp)
+                    .width(44.dp)
+                    .height(2.dp)
+                    .background(accentColor)
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            val titleBrush = if (titleGradientEnabled)
+                Brush.linearGradient(gradientTheme.colorsArgb.map { Color(it) }) else null
+
+            fakeSongs.forEach { (title, artist) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(6.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.Photo,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        if (titleBrush != null) {
+                            Text(
+                                title,
+                                style = MaterialTheme.typography.bodySmall.copy(brush = titleBrush)
+                            )
+                        } else {
+                            Text(title, color = Color.White, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text(
+                            artist,
+                            color = Color.White.copy(alpha = 0.65f),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -23,12 +23,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.harmonic.player.data.GradientTheme
 import com.harmonic.player.data.MusicDatabase
 import com.harmonic.player.data.Playlist
 import com.harmonic.player.data.PlaylistSongCrossRef
+import com.harmonic.player.data.SettingsRepository
 import com.harmonic.player.data.Song
 import com.harmonic.player.playback.PlayerController
 import com.harmonic.player.ui.miniplayer.MiniPlayer
@@ -40,11 +45,21 @@ private enum class LibraryTab(val label: String) {
     GENRES("Gêneros"), FOLDERS("Pastas"), FAVORITES("Favoritas")
 }
 
+/**
+ * Brush opcional pro título das músicas na lista, quando o usuário ativa
+ * "gradiente nos títulos" na tela de Aparência. `null` = título com cor
+ * sólida (comportamento padrão). Como [SongRow] é privado deste arquivo e
+ * usado só aqui, um CompositionLocal evita ter que passar esse parâmetro
+ * por todas as chamadas de SongList/SongRow espalhadas pelas abas.
+ */
+private val LocalSongTitleBrush = compositionLocalOf<Brush?> { null }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     database: MusicDatabase,
     playerController: PlayerController,
+    settings: SettingsRepository,
     onSongClick: (List<Song>, Int) -> Unit,
     onOpenNowPlaying: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -53,6 +68,17 @@ fun LibraryScreen(
     val scope = rememberCoroutineScope()
     val dao = remember { database.songDao() }
     val playbackState by playerController.uiState.collectAsState()
+
+    // Gradiente do título das músicas, se o usuário ativou essa opção em
+    // Aparência — reaproveita as cores do tema de gradiente ativo (ou o
+    // padrão "Meia-noite" quando o fundo é uma imagem, já que aí não existe
+    // uma paleta de gradiente selecionada).
+    val titleGradientEnabled by settings.titleGradientEnabled.collectAsState(initial = false)
+    val gradientThemeName by settings.gradientTheme.collectAsState(initial = null)
+    val titleBrush = if (titleGradientEnabled) {
+        val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.MIDNIGHT
+        Brush.linearGradient(theme.colorsArgb.map { Color(it) })
+    } else null
 
     // Música selecionada pra mostrar o menu de opções (tocar em seguida,
     // adicionar à fila, adicionar à playlist). null = menu fechado.
@@ -89,6 +115,7 @@ fun LibraryScreen(
     val searchResults by (if (searchQuery.isNotBlank()) dao.search(searchQuery) else dao.getAllSongs())
         .collectAsState(initial = emptyList())
 
+    CompositionLocalProvider(LocalSongTitleBrush provides titleBrush) {
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -143,18 +170,40 @@ fun LibraryScreen(
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
 
             if (searchQuery.isBlank()) {
+                val accentColor = MaterialTheme.colorScheme.primary
                 ScrollableTabRow(
                     selectedTabIndex = selectedTab.ordinal,
                     containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.primary
+                    contentColor = Color.White,
+                    edgePadding = 16.dp,
+                    // Sem o divisor padrão (linha cinza full-width) — some
+                    // com a sensação de "barra escura" atrás do menu.
+                    divider = {},
+                    indicator = { tabPositions ->
+                        if (selectedTab.ordinal < tabPositions.size) {
+                            TabRowDefaults.Indicator(
+                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
+                                height = 3.dp,
+                                color = accentColor
+                            )
+                        }
+                    }
                 ) {
                     LibraryTab.values().forEach { tab ->
+                        val isSelected = selectedTab == tab
                         Tab(
-                            selected = selectedTab == tab,
+                            selected = isSelected,
                             onClick = { selectedTab = tab },
-                            text = { Text(tab.label) },
-                            selectedContentColor = MaterialTheme.colorScheme.primary,
-                            unselectedContentColor = Color.White.copy(alpha = 0.7f)
+                            text = {
+                                Text(
+                                    tab.label,
+                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.55f),
+                                    fontSize = if (isSelected) 15.sp else 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            },
+                            selectedContentColor = Color.White,
+                            unselectedContentColor = Color.White.copy(alpha = 0.55f)
                         )
                     }
                 }
@@ -284,6 +333,7 @@ fun LibraryScreen(
             }
         }
     }
+    } // fim do CompositionLocalProvider(LocalSongTitleBrush)
 
     songForOptions?.let { song ->
         SongOptionsSheet(
@@ -372,12 +422,25 @@ private fun SongRow(
             )
         },
         headlineContent = {
-            Text(
-                song.title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (isCurrentlyPlaying) accentColor else Color.White
-            )
+            val titleBrush = LocalSongTitleBrush.current
+            if (titleBrush != null && !isCurrentlyPlaying) {
+                // Gradiente só no título; a música tocando no momento
+                // continua com a cor de destaque sólida, pra não perder o
+                // "qual música está tocando agora" que o gradiente ia diluir.
+                Text(
+                    song.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = LocalTextStyle.current.copy(brush = titleBrush)
+                )
+            } else {
+                Text(
+                    song.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isCurrentlyPlaying) accentColor else Color.White
+                )
+            }
         },
         supportingContent = {
             Text(

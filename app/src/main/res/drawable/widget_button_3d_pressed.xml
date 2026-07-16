@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Estado "pressionado": sem sombra projetada (o botão encostou na
+     superfície) e o gradiente inverte — mais escuro em cima, mais claro
+     embaixo — pra parecer afundado em vez de saltado. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:top="1dp" android:left="1dp" android:right="1dp" android:bottom="1dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="#1AFFFFFF"
+                android:centerColor="#26FFFFFF"
+                android:endColor="#40FFFFFF" />
+            <stroke
+                android:width="1dp"
+                android:color="#40FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

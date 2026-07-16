@@ -27,11 +27,15 @@ enum class DefaultWallpaper(val assetPath: String, val label: String) {
  * não precisar depender do Compose.
  */
 enum class GradientTheme(val label: String, val colorsArgb: List<Long>) {
-    MIDNIGHT("Meia-noite", listOf(0xFF0F0C29, 0xFF302B63, 0xFF24243E)),
-    SUNSET("Pôr do sol", listOf(0xFFFF512F, 0xFFDD2476)),
-    OCEAN("Oceano", listOf(0xFF000428, 0xFF004E92)),
-    FOREST("Floresta", listOf(0xFF134E5E, 0xFF71B280)),
-    ROSE("Rosé", listOf(0xFF2C0E37, 0xFF6B2D5C, 0xFFB4548A)),
+    // Cores mais explícitas/vivas que a v1 (3 paradas em vez de 2 na
+    // maioria), pra ficar bonito tanto como fundo quanto como gradiente de
+    // texto — ainda escuro o bastante pra manter o texto branco legível.
+    MIDNIGHT("Meia-noite", listOf(0xFF020024, 0xFF090979, 0xFF00B4DB)),
+    SUNSET("Pôr do sol", listOf(0xFFFFD200, 0xFFFF512F, 0xFFDD2476)),
+    OCEAN("Oceano", listOf(0xFF000428, 0xFF004E92, 0xFF00D4FF)),
+    FOREST("Floresta", listOf(0xFF0F2027, 0xFF134E5E, 0xFF00C853)),
+    ROSE("Rosé", listOf(0xFF2C0E37, 0xFF6B2D5C, 0xFFFF6FB5)),
+    NEON("Neon", listOf(0xFF7303C0, 0xFFEC38BC, 0xFFFDEFF9)),
     MONO("Mono (mais leve)", listOf(0xFF161616, 0xFF0A0A0A))
 }
 
@@ -46,6 +50,7 @@ class SettingsRepository(private val context: Context) {
         val BACKGROUND_BLUR_ENABLED = booleanPreferencesKey("background_blur_enabled")
         val BACKGROUND_BLUR_RADIUS = intPreferencesKey("background_blur_radius") // em dp, 0-40
         val BACKGROUND_SCRIM_ALPHA = intPreferencesKey("background_scrim_alpha") // 0-100 (%)
+        val TITLE_GRADIENT_ENABLED = booleanPreferencesKey("title_gradient_enabled")
         val THEME_MODE = stringPreferencesKey("theme_mode") // "light" | "dark" | "amoled" | "system"
         val IGNORED_FOLDERS = stringSetPreferencesKey("ignored_folders")
         val CROSSFADE_MS = intPreferencesKey("crossfade_ms")
@@ -76,6 +81,10 @@ class SettingsRepository(private val context: Context) {
     val backgroundBlurEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.BACKGROUND_BLUR_ENABLED] ?: false }
     val backgroundBlurRadius: Flow<Int> = context.dataStore.data.map { it[Keys.BACKGROUND_BLUR_RADIUS] ?: 10 }
     val backgroundScrimAlpha: Flow<Int> = context.dataStore.data.map { it[Keys.BACKGROUND_SCRIM_ALPHA] ?: 45 }
+    // Gradiente também nos títulos das listas (opcional) — usa as mesmas
+    // cores do tema de gradiente ativo (ou "Meia-noite" se o fundo for uma
+    // imagem/foto, já que nesse caso não há uma paleta de gradiente ativa).
+    val titleGradientEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_ENABLED] ?: false }
     // Padrão "dark", não "system": o app sempre mostra uma imagem de fundo
     // com véu escuro por cima, então texto escuro (o que aconteceria no
     // tema claro do sistema) fica ilegível. Continua possível escolher
@@ -127,6 +136,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setBackgroundScrimAlpha(alphaPercent: Int) {
         context.dataStore.edit { it[Keys.BACKGROUND_SCRIM_ALPHA] = alphaPercent }
+    }
+
+    suspend fun setTitleGradientEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.TITLE_GRADIENT_ENABLED] = enabled }
     }
 
     suspend fun setThemeMode(mode: String) {

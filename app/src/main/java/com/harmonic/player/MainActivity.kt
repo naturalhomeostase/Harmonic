@@ -161,6 +161,7 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
             LibraryScreen(
                 database = app.database,
                 playerController = playerController,
+                settings = app.settings,
                 onSongClick = { queue, index -> playerController.playQueue(queue, index) },
                 onOpenNowPlaying = { navController.navigate("now_playing") },
                 onOpenSettings = { navController.navigate("appearance") },

@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.ImageProvider
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -15,6 +17,7 @@ import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
@@ -22,13 +25,16 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.action.ActionParameters
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.harmonic.player.MainActivity
+import com.harmonic.player.R
 import com.harmonic.player.playback.PlaybackServiceHolder
 
 /**
@@ -58,17 +64,21 @@ class HarmonicWidget : GlanceAppWidget() {
     private fun WidgetContent() {
         val state = PlaybackServiceHolder.state.value
         val white = ColorProvider(Color.White)
-        val gray = ColorProvider(Color(0xFFBBBBBB))
+        val gray = ColorProvider(Color(0xFFE0E0E0))
 
         Column(
             modifier = GlanceModifier
                 .fillMaxSize()
-                .background(Color(0xFF1A1A1D))
-                .padding(12.dp)
+                // Gradiente: 100% transparente no topo (o papel de parede do
+                // sistema aparece direto atrás do título) e escurece aos
+                // poucos até a base, só o suficiente pra dar contraste aos
+                // botões — em vez do retângulo escuro sólido de antes.
+                .background(ImageProvider(R.drawable.widget_bg_gradient))
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Text(
                 text = state.title ?: "Harmonic",
-                style = TextStyle(fontWeight = FontWeight.Bold, color = white),
+                style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 15.sp, color = white),
                 maxLines = 1,
                 modifier = GlanceModifier
                     .fillMaxWidth()
@@ -76,36 +86,74 @@ class HarmonicWidget : GlanceAppWidget() {
             )
             Text(
                 text = state.artist ?: if (state.hasQueue) "" else "Nenhuma música tocando",
-                style = TextStyle(color = gray),
+                style = TextStyle(fontSize = 13.sp, color = gray),
                 maxLines = 1,
                 modifier = GlanceModifier.fillMaxWidth()
             )
 
-            Spacer(modifier = GlanceModifier.height(8.dp))
+            Spacer(modifier = GlanceModifier.height(14.dp))
 
+            // Botões "físicos": cada um tem seu próprio drawable em camadas
+            // (sombra + corpo em gradiente + reflexo) que simula um botão
+            // saltando da superfície do widget, e "afunda" visualmente
+            // enquanto pressionado (ver widget_button_3d_selector.xml).
             Row(
                 modifier = GlanceModifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "⏮",
-                    style = TextStyle(fontWeight = FontWeight.Bold, color = white),
-                    modifier = GlanceModifier.clickable(actionRunCallback<PreviousAction>())
+                PhysicalButton(
+                    emoji = "⏮",
+                    size = 46.dp,
+                    fontSize = 18.sp,
+                    background = R.drawable.widget_button_3d_selector,
+                    onClick = actionRunCallback<PreviousAction>()
                 )
-                Spacer(modifier = GlanceModifier.width(28.dp))
-                Text(
-                    text = if (state.isPlaying) "⏸" else "▶",
-                    style = TextStyle(fontWeight = FontWeight.Bold, color = white),
-                    modifier = GlanceModifier.clickable(actionRunCallback<PlayPauseAction>())
+                Spacer(modifier = GlanceModifier.width(18.dp))
+                PhysicalButton(
+                    emoji = if (state.isPlaying) "⏸" else "▶",
+                    size = 60.dp,
+                    fontSize = 22.sp,
+                    background = R.drawable.widget_button_3d_primary_selector,
+                    onClick = actionRunCallback<PlayPauseAction>()
                 )
-                Spacer(modifier = GlanceModifier.width(28.dp))
-                Text(
-                    text = "⏭",
-                    style = TextStyle(fontWeight = FontWeight.Bold, color = white),
-                    modifier = GlanceModifier.clickable(actionRunCallback<NextAction>())
+                Spacer(modifier = GlanceModifier.width(18.dp))
+                PhysicalButton(
+                    emoji = "⏭",
+                    size = 46.dp,
+                    fontSize = 18.sp,
+                    background = R.drawable.widget_button_3d_selector,
+                    onClick = actionRunCallback<NextAction>()
                 )
             }
+        }
+    }
+
+    /** Botão circular "saltado" da superfície — capa em drawable simula o 3D, aqui só centralizamos o ícone. */
+    @Composable
+    private fun PhysicalButton(
+        emoji: String,
+        size: androidx.compose.ui.unit.Dp,
+        fontSize: androidx.compose.ui.unit.TextUnit,
+        background: Int,
+        onClick: androidx.glance.action.Action
+    ) {
+        Box(
+            modifier = GlanceModifier
+                .size(size)
+                .background(ImageProvider(background))
+                .clickable(onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = emoji,
+                style = TextStyle(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = fontSize,
+                    color = ColorProvider(Color.White),
+                    textAlign = TextAlign.Center
+                )
+            )
         }
     }
 }
