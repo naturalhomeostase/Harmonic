@@ -479,7 +479,7 @@ fun LibraryScreen(
                 selectedTab == LibraryTab.GENRES -> {
                     val songs by dao.getSongsByGenre(drilledGroup!!).collectAsState(initial = emptyList())
                     Column {
-                        GroupHeader(title = drilledGroup!!) { drilledGroup = null }
+                        GroupHeader(title = drilledGroup!!, onBack = { drilledGroup = null })
                         SongList(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
@@ -691,7 +691,6 @@ fun LibraryScreen(
     }
 }
 
-@Composable
 @Composable
 private fun GroupHeader(title: String, onBack: () -> Unit, menuItems: List<com.harmonic.player.ui.common.ActionSheetItem>? = null) {
     var showMenu by remember { mutableStateOf(false) }
