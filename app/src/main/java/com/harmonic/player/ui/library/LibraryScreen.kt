@@ -1,21 +1,42 @@
 package com.harmonic.player.ui.library
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
@@ -23,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -31,11 +53,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.harmonic.player.data.GradientTheme
+import com.harmonic.player.data.AlbumSummary
 import com.harmonic.player.data.MusicDatabase
 import com.harmonic.player.data.Playlist
 import com.harmonic.player.data.PlaylistSongCrossRef
 import com.harmonic.player.data.SettingsRepository
 import com.harmonic.player.data.Song
+import com.harmonic.player.data.SongDao
+import com.harmonic.player.ui.common.ActionSheet
 import com.harmonic.player.playback.PlayerController
 import com.harmonic.player.ui.miniplayer.MiniPlayer
 import kotlinx.coroutines.flow.first
@@ -45,6 +70,13 @@ private enum class LibraryTab(val label: String) {
     SONGS("Músicas"), ARTISTS("Artistas"), ALBUMS("Álbuns"),
     GENRES("Gêneros"), FOLDERS("Pastas"), FAVORITES("Favoritas")
 }
+
+private val songSortOptions = listOf(
+    com.harmonic.player.ui.common.SortOption("title", "Título"),
+    com.harmonic.player.ui.common.SortOption("artist", "Artista"),
+    com.harmonic.player.ui.common.SortOption("duration", "Duração"),
+    com.harmonic.player.ui.common.SortOption("dateAdded", "Data adicionada")
+)
 
 /**
  * Brush opcional pro título das músicas na lista, quando o usuário ativa
@@ -67,6 +99,7 @@ fun LibraryScreen(
     onOpenPlaylists: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val dao = remember { database.songDao() }
     val playbackState by playerController.uiState.collectAsState()
 
@@ -75,16 +108,14 @@ fun LibraryScreen(
     // padrão "Meia-noite" quando o fundo é uma imagem, já que aí não existe
     // uma paleta de gradiente selecionada).
     val titleGradientEnabled by settings.titleGradientEnabled.collectAsState(initial = false)
-    val titleGradientMode by settings.titleGradientMode.collectAsState(initial = "theme")
     val gradientThemeName by settings.gradientTheme.collectAsState(initial = null)
-    val accentColorArgb by settings.accentColor.collectAsState(initial = null)
+    val titleGradientColorStart by settings.titleGradientColorStart.collectAsState(initial = null)
+    val titleGradientColorEnd by settings.titleGradientColorEnd.collectAsState(initial = null)
+    val albumGridView by settings.albumGridView.collectAsState(initial = false)
     val titleBrush = if (titleGradientEnabled) {
-        if (titleGradientMode == "monochrome") {
-            val base = accentColorArgb?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
-            // Tom único: da própria cor de destaque (mais escura) até uma
-            // versão bem mais clara dela — discreto, funciona em cima de
-            // qualquer fundo, inclusive foto.
-            Brush.linearGradient(listOf(base.copy(alpha = 0.75f), lightenColor(base, 0.55f)))
+        if (titleGradientColorStart != null && titleGradientColorEnd != null) {
+            // Cores escolhidas livremente pelo usuário na roda de cores.
+            Brush.linearGradient(listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!)))
         } else {
             val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.MIDNIGHT
             Brush.linearGradient(theme.colorsArgb.map { Color(it) })
@@ -94,6 +125,14 @@ fun LibraryScreen(
     // Música selecionada pra mostrar o menu de opções (tocar em seguida,
     // adicionar à fila, adicionar à playlist). null = menu fechado.
     var songForOptions by remember { mutableStateOf<Song?>(null) }
+    var bulkAddSongs by remember { mutableStateOf<List<Song>?>(null) }
+    var deleteConfirm by remember { mutableStateOf<Pair<String, suspend () -> Unit>?>(null) }
+    var renameArtistTarget by remember { mutableStateOf<String?>(null) }
+    var renameAlbumTarget by remember { mutableStateOf<AlbumSummary?>(null) }
+    val favoriteArtists by dao.getFavoriteArtistNames().collectAsState(initial = emptyList())
+    val favoriteAlbumIds by dao.getFavoriteAlbumIds().collectAsState(initial = emptyList())
+    var sortKey by remember { mutableStateOf("title") }
+    var sortAscending by remember { mutableStateOf(true) }
 
     var selectedTab by remember { mutableStateOf(LibraryTab.SONGS) }
     // Quando o usuário toca num nome de artista/álbum/gênero/pasta, guardamos
@@ -155,6 +194,15 @@ fun LibraryScreen(
                 },
                 actions = {
                     if (!isSearching) {
+                        if (selectedTab == LibraryTab.SONGS) {
+                            com.harmonic.player.ui.common.SortMenuButton(
+                                options = songSortOptions,
+                                selectedKey = sortKey,
+                                ascending = sortAscending,
+                                onSelect = { sortKey = it },
+                                onToggleDirection = { sortAscending = !sortAscending }
+                            )
+                        }
                         IconButton(onClick = { isSearching = true }) {
                             Icon(Icons.Filled.Search, contentDescription = "Buscar")
                         }
@@ -233,9 +281,18 @@ fun LibraryScreen(
 
                 selectedTab == LibraryTab.SONGS -> {
                     val songs by dao.getAllSongs().collectAsState(initial = emptyList())
+                    val sortedSongs = remember(songs, sortKey, sortAscending) {
+                        val base = when (sortKey) {
+                            "artist" -> songs.sortedBy { it.artist.lowercase() }
+                            "duration" -> songs.sortedBy { it.durationMs }
+                            "dateAdded" -> songs.sortedBy { it.dateAdded }
+                            else -> songs.sortedBy { it.title.lowercase() }
+                        }
+                        if (sortAscending) base else base.reversed()
+                    }
                     SongList(
-                        songs = songs,
-                        onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
+                        songs = sortedSongs,
+                        onSongClick = { onSongClick(sortedSongs, sortedSongs.indexOf(it)); onOpenNowPlaying() },
                         onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
                         onLongPress = { songForOptions = it },
                         currentPlayingSongId = playbackState.currentSong?.id,
@@ -260,9 +317,53 @@ fun LibraryScreen(
                     GroupList(items = artists) { drilledGroup = it }
                 }
                 selectedTab == LibraryTab.ARTISTS -> {
-                    val songs by dao.getSongsByArtist(drilledGroup!!).collectAsState(initial = emptyList())
+                    val artistName = drilledGroup!!
+                    val songs by dao.getSongsByArtist(artistName).collectAsState(initial = emptyList())
+                    val isFavArtist = favoriteArtists.contains(artistName)
                     Column {
-                        GroupHeader(title = drilledGroup!!) { drilledGroup = null }
+                        GroupHeader(
+                            title = artistName,
+                            onBack = { drilledGroup = null },
+                            menuItems = listOf(
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
+                                    playerController.playQueue(songs, 0)
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Shuffle") {
+                                    playerController.playQueue(songs.shuffled(), 0)
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
+                                    songs.forEach { playerController.addToQueueEnd(it) }
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlaylistAdd, "Adicionar à playlist") {
+                                    bulkAddSongs = songs
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(
+                                    if (isFavArtist) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    if (isFavArtist) "Remover dos favoritos" else "Favoritar"
+                                ) {
+                                    scope.launch { dao.setArtistFavorite(artistName, !isFavArtist) }
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Edit, "Renomear") {
+                                    renameArtistTarget = artistName
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Share, "Compartilhar") {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, "Ouvindo $artistName")
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(intent, null))
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(
+                                    Icons.Filled.Delete, "Excluir",
+                                    tint = MaterialTheme.colorScheme.error
+                                ) {
+                                    deleteConfirm = "Excluir todas as músicas de \"$artistName\"?" to {
+                                        dao.deleteSongsByArtist(artistName)
+                                        drilledGroup = null
+                                    }
+                                }
+                            )
+                        )
                         SongList(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
@@ -276,23 +377,90 @@ fun LibraryScreen(
 
                 selectedTab == LibraryTab.ALBUMS && drilledAlbumId == null -> {
                     val albums by dao.getAlbums().collectAsState(initial = emptyList())
-                    LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        items(albums, key = { it.albumId }) { album ->
-                            ListItem(
-                                headlineContent = { Text(album.album, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                modifier = Modifier.clickable {
-                                    drilledGroup = album.album
-                                    drilledAlbumId = album.albumId
-                                }
-                            )
+                    if (albumGridView) {
+                        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(albums, key = { it.albumId }) { album ->
+                                AlbumGridCell(
+                                    album = album,
+                                    dao = dao,
+                                    onClick = {
+                                        drilledGroup = album.album
+                                        drilledAlbumId = album.albumId
+                                    }
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            items(albums, key = { it.albumId }) { album ->
+                                ListItem(
+                                    headlineContent = { Text(album.album, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                    modifier = Modifier.clickable {
+                                        drilledGroup = album.album
+                                        drilledAlbumId = album.albumId
+                                    }
+                                )
+                            }
                         }
                     }
                 }
                 selectedTab == LibraryTab.ALBUMS -> {
-                    val songs by dao.getSongsByAlbum(drilledAlbumId!!).collectAsState(initial = emptyList())
+                    val albumId = drilledAlbumId!!
+                    val albumName = drilledGroup ?: ""
+                    val songs by dao.getSongsByAlbum(albumId).collectAsState(initial = emptyList())
+                    val isFavAlbum = favoriteAlbumIds.contains(albumId)
                     Column {
-                        GroupHeader(title = drilledGroup ?: "") { drilledGroup = null; drilledAlbumId = null }
+                        GroupHeader(
+                            title = albumName,
+                            onBack = { drilledGroup = null; drilledAlbumId = null },
+                            menuItems = listOf(
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
+                                    playerController.playQueue(songs, 0)
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Shuffle") {
+                                    playerController.playQueue(songs.shuffled(), 0)
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
+                                    songs.forEach { playerController.addToQueueEnd(it) }
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlaylistAdd, "Adicionar à playlist") {
+                                    bulkAddSongs = songs
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(
+                                    if (isFavAlbum) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    if (isFavAlbum) "Remover dos favoritos" else "Favoritar"
+                                ) {
+                                    scope.launch { dao.setAlbumFavorite(albumId, !isFavAlbum) }
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Edit, "Renomear") {
+                                    renameAlbumTarget = AlbumSummary(albumName, albumId)
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Share, "Compartilhar") {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, "Ouvindo o álbum $albumName")
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(intent, null))
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(
+                                    Icons.Filled.Delete, "Excluir",
+                                    tint = MaterialTheme.colorScheme.error
+                                ) {
+                                    deleteConfirm = "Excluir todas as músicas do álbum \"$albumName\"?" to {
+                                        dao.deleteSongsByAlbum(albumId)
+                                        drilledGroup = null
+                                        drilledAlbumId = null
+                                    }
+                                }
+                            )
+                        )
                         SongList(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
@@ -325,12 +493,47 @@ fun LibraryScreen(
 
                 selectedTab == LibraryTab.FOLDERS && drilledGroup == null -> {
                     val folders by dao.getFolders().collectAsState(initial = emptyList())
-                    GroupList(items = folders) { drilledGroup = it }
+                    FolderList(folders = folders) { drilledGroup = it }
                 }
                 selectedTab == LibraryTab.FOLDERS -> {
-                    val songs by dao.getSongsByFolder(drilledGroup!!).collectAsState(initial = emptyList())
+                    val folder = drilledGroup!!
+                    val songs by dao.getSongsByFolder(folder).collectAsState(initial = emptyList())
                     Column {
-                        GroupHeader(title = drilledGroup!!.substringAfterLast('/')) { drilledGroup = null }
+                        GroupHeader(
+                            title = folder.substringAfterLast('/'),
+                            onBack = { drilledGroup = null },
+                            menuItems = listOf(
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
+                                    playerController.playQueue(songs, 0)
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Shuffle all") {
+                                    playerController.playQueue(songs.shuffled(), 0)
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlaylistAdd, "Adicionar à playlist") {
+                                    bulkAddSongs = songs
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.VisibilityOff, "Ocultar pasta") {
+                                    scope.launch { dao.hideFolder(com.harmonic.player.data.HiddenFolder(folder)) }
+                                    drilledGroup = null
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Share, "Compartilhar") {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, folder)
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(intent, null))
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(
+                                    Icons.Filled.Delete, "Excluir",
+                                    tint = MaterialTheme.colorScheme.error
+                                ) {
+                                    deleteConfirm = "Excluir todas as músicas da pasta \"${folder.substringAfterLast('/')}\"?" to {
+                                        dao.deleteSongsByFolder(folder)
+                                        drilledGroup = null
+                                    }
+                                }
+                            )
+                        )
                         SongList(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it)); onOpenNowPlaying() },
@@ -355,18 +558,143 @@ fun LibraryScreen(
             onAddToQueueEnd = { playerController.addToQueueEnd(song); songForOptions = null }
         )
     }
+
+    // Excluir todas as músicas de um artista/álbum/pasta de uma vez —
+    // reaproveitado pelos 3 menus, já que a confirmação é sempre igual:
+    // uma mensagem e uma ação suspend pra rodar se o usuário confirmar.
+    deleteConfirm?.let { (message, action) ->
+        AlertDialog(
+            onDismissRequest = { deleteConfirm = null },
+            title = { Text("Excluir?") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { action() }
+                    deleteConfirm = null
+                }) { Text("Excluir", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirm = null }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    // Adicionar todas as músicas de um artista/álbum/pasta a uma playlist —
+    // mesma ideia do seletor de playlist por música, só que em lote.
+    bulkAddSongs?.let { songs ->
+        val playlists by dao.getPlaylists().collectAsState(initial = emptyList())
+        var showCreate by remember { mutableStateOf(false) }
+        if (!showCreate) {
+            AlertDialog(
+                onDismissRequest = { bulkAddSongs = null },
+                title = { Text("Adicionar ${songs.size} música(s) a qual playlist?") },
+                text = {
+                    Column {
+                        if (playlists.isEmpty()) Text("Nenhuma playlist ainda.")
+                        playlists.forEach { playlist ->
+                            ListItem(
+                                headlineContent = { Text(playlist.name) },
+                                modifier = Modifier.clickable {
+                                    scope.launch {
+                                        val startPos = dao.getPlaylistSongs(playlist.id).first().size
+                                        songs.forEachIndexed { index, s ->
+                                            dao.addToPlaylist(PlaylistSongCrossRef(playlist.id, s.id, startPos + index))
+                                        }
+                                        dao.touchPlaylist(playlist.id)
+                                    }
+                                    bulkAddSongs = null
+                                }
+                            )
+                        }
+                        ListItem(
+                            leadingContent = { Icon(Icons.Filled.PlaylistAdd, contentDescription = null) },
+                            headlineContent = { Text("Nova playlist...") },
+                            modifier = Modifier.clickable { showCreate = true }
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { bulkAddSongs = null }) { Text("Fechar") }
+                }
+            )
+        } else {
+            var newName by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { bulkAddSongs = null },
+                title = { Text("Nova playlist") },
+                text = {
+                    OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true)
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = newName.isNotBlank(),
+                        onClick = {
+                            scope.launch {
+                                val newId = dao.insertPlaylist(Playlist(name = newName.trim()))
+                                songs.forEachIndexed { index, s ->
+                                    dao.addToPlaylist(PlaylistSongCrossRef(newId, s.id, index))
+                                }
+                            }
+                            bulkAddSongs = null
+                        }
+                    ) { Text("Criar e adicionar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { bulkAddSongs = null }) { Text("Cancelar") }
+                }
+            )
+        }
+    }
+
+    renameArtistTarget?.let { artistName ->
+        var newName by remember { mutableStateOf(artistName) }
+        AlertDialog(
+            onDismissRequest = { renameArtistTarget = null },
+            title = { Text("Renomear artista") },
+            text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true) },
+            confirmButton = {
+                TextButton(
+                    enabled = newName.isNotBlank(),
+                    onClick = {
+                        scope.launch { dao.renameArtist(artistName, newName.trim()) }
+                        drilledGroup = newName.trim()
+                        renameArtistTarget = null
+                    }
+                ) { Text("Salvar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameArtistTarget = null }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    renameAlbumTarget?.let { album ->
+        var newName by remember { mutableStateOf(album.album) }
+        AlertDialog(
+            onDismissRequest = { renameAlbumTarget = null },
+            title = { Text("Renomear álbum") },
+            text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true) },
+            confirmButton = {
+                TextButton(
+                    enabled = newName.isNotBlank(),
+                    onClick = {
+                        scope.launch { dao.renameAlbum(album.albumId, newName.trim()) }
+                        drilledGroup = newName.trim()
+                        renameAlbumTarget = null
+                    }
+                ) { Text("Salvar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameAlbumTarget = null }) { Text("Cancelar") }
+            }
+        )
+    }
 }
 
-/** Clareia uma cor em direção ao branco, por um fator de 0 (sem mudança) a 1 (vira branco). */
-private fun lightenColor(color: Color, factor: Float): Color = Color(
-    red = color.red + (1f - color.red) * factor,
-    green = color.green + (1f - color.green) * factor,
-    blue = color.blue + (1f - color.blue) * factor,
-    alpha = color.alpha
-)
-
 @Composable
-private fun GroupHeader(title: String, onBack: () -> Unit) {
+@Composable
+private fun GroupHeader(title: String, onBack: () -> Unit, menuItems: List<com.harmonic.player.ui.common.ActionSheetItem>? = null) {
+    var showMenu by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth().padding(8.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
@@ -379,7 +707,20 @@ private fun GroupHeader(title: String, onBack: () -> Unit) {
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (menuItems != null) {
+            IconButton(onClick = { showMenu = true }) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
+            }
+        }
+    }
+    if (showMenu && menuItems != null) {
+        com.harmonic.player.ui.common.ActionSheet(
+            onDismiss = { showMenu = false },
+            title = title,
+            items = menuItems.map { item -> item.copy(onClick = { showMenu = false; item.onClick() }) }
         )
     }
 }
@@ -394,6 +735,63 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
                 modifier = Modifier.clickable { onClick(name) }
             )
         }
+    }
+}
+
+/**
+ * Lista de pastas com ícone na cor de destaque e o NOME da pasta em
+ * destaque acima do caminho completo (antes só aparecia o caminho).
+ */
+@Composable
+private fun FolderList(folders: List<String>, onClick: (String) -> Unit) {
+    val accentColor = MaterialTheme.colorScheme.primary
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(folders, key = { it }) { folder ->
+            val folderName = folder.trimEnd('/').substringAfterLast('/').ifBlank { folder }
+            ListItem(
+                leadingContent = {
+                    Icon(Icons.Filled.Folder, contentDescription = null, tint = accentColor)
+                },
+                headlineContent = {
+                    Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
+                },
+                supportingContent = {
+                    Text(folder, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.55f))
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                modifier = Modifier.clickable { onClick(folder) }
+            )
+        }
+    }
+}
+
+/** Uma célula da grade de álbuns: busca a capa da primeira música do álbum sob demanda. */
+@Composable
+private fun AlbumGridCell(album: AlbumSummary, dao: SongDao, onClick: () -> Unit) {
+    var sampleSong by remember(album.albumId) { mutableStateOf<Song?>(null) }
+    LaunchedEffect(album.albumId) {
+        sampleSong = dao.getFirstSongForAlbum(album.albumId)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        com.harmonic.player.ui.common.AlbumArt(
+            song = sampleSong,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            album.album,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
 
@@ -415,6 +813,49 @@ private fun SongList(
                 onLongPress = { onLongPress(song) },
                 isCurrentlyPlaying = song.id == currentPlayingSongId,
                 isPlaying = isPlaying
+            )
+        }
+    }
+}
+
+/**
+ * Três barrinhas verticais que sobem e descem em loop, tipo um equalizer de
+ * verdade — cada barra com sua própria duração/fase, pra não ficarem
+ * "batendo" juntas de forma óbvia e mecânica. Só é chamado quando a música
+ * está de fato tocando (ver SongRow); quando pausada, cai no ícone estático.
+ */
+@Composable
+private fun AnimatedEqualizerBars(color: Color, modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "eq")
+    val bar1 by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(420, easing = LinearEasing), RepeatMode.Reverse),
+        label = "eqBar1"
+    )
+    val bar2 by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.3f,
+        animationSpec = infiniteRepeatable(tween(560, easing = LinearEasing), RepeatMode.Reverse),
+        label = "eqBar2"
+    )
+    val bar3 by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(tween(340, easing = LinearEasing), RepeatMode.Reverse),
+        label = "eqBar3"
+    )
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        listOf(bar1, bar2, bar3).forEach { fraction ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(fraction.coerceIn(0.15f, 1f))
+                    .background(color, RoundedCornerShape(1.dp))
             )
         }
     }
@@ -474,12 +915,19 @@ private fun SongRow(
                 // Indica visualmente qual música da lista está tocando
                 // agora — sem isso, era impossível saber só olhando a lista.
                 if (isCurrentlyPlaying) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Filled.Equalizer else Icons.Filled.Pause,
-                        contentDescription = if (isPlaying) "Tocando agora" else "Pausado",
-                        tint = accentColor,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    if (isPlaying) {
+                        AnimatedEqualizerBars(
+                            color = accentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Pause,
+                            contentDescription = "Pausado",
+                            tint = accentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                     Spacer(Modifier.width(4.dp))
                 }
                 IconButton(onClick = onFavoriteToggle, modifier = Modifier.size(48.dp)) {
@@ -499,9 +947,9 @@ private fun SongRow(
 }
 
 /**
- * Bottom sheet de opções aberto com toque longo numa música: tocar em
- * seguida, adicionar ao final da fila, ou adicionar a uma playlist
- * (incluindo criar uma nova playlist na hora).
+ * Bottom sheet de opções aberto com toque longo numa música — reúne todas
+ * as ações possíveis: fila, playlist, corte, renomear, capa, toque de
+ * chamada, compartilhar, excluir, nome do arquivo, propriedades e ocultar.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -513,44 +961,154 @@ private fun SongOptionsSheet(
     onAddToQueueEnd: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    var showActionSheet by remember { mutableStateOf(true) }
     var showPlaylistPicker by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showEditFileNameDialog by remember { mutableStateOf(false) }
+    var showTrimDialog by remember { mutableStateOf(false) }
+    var showPropertiesDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column {
-            Text(
-                song.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-            Spacer(Modifier.height(8.dp))
+    val songUri = remember(song.mediaStoreId) {
+        android.content.ContentUris.withAppendedId(
+            android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.mediaStoreId
+        )
+    }
 
-            ListItem(
-                leadingContent = { Icon(Icons.Filled.SkipNext, contentDescription = null) },
-                headlineContent = { Text("Tocar em seguida") },
-                modifier = Modifier.clickable(onClick = onPlayNext)
-            )
-            ListItem(
-                leadingContent = { Icon(Icons.Filled.QueueMusic, contentDescription = null) },
-                headlineContent = { Text("Adicionar ao final da fila") },
-                modifier = Modifier.clickable(onClick = onAddToQueueEnd)
-            )
-            ListItem(
-                leadingContent = { Icon(Icons.Filled.PlaylistAdd, contentDescription = null) },
-                headlineContent = { Text("Adicionar à playlist") },
-                modifier = Modifier.clickable { showPlaylistPicker = true }
-            )
-            Spacer(Modifier.height(16.dp))
+    // Escolher uma imagem da galeria pra usar como capa — OpenDocument (em
+    // vez de GetContent) porque suporta permissão persistente: sem isso, a
+    // capa sumiria depois que o app fosse reiniciado.
+    val coverPickerLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: SecurityException) { /* alguns provedores não suportam; a capa ainda funciona nesta sessão */ }
+            scope.launch { dao.setCustomCover(song.id, uri.toString()) }
         }
+        onDismiss()
+    }
+
+    // Excluir/renomear o arquivo de verdade (não só o registro no app) pode
+    // pedir confirmação do sistema em Android 10+ — esse launcher recebe
+    // essa resposta.
+    val securityLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
+    ) { /* o usuário decide na própria tela do sistema; nada a fazer aqui */ }
+
+    fun deleteSong() {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                context.contentResolver.delete(songUri, null, null)
+                dao.deleteSongById(song.id)
+            } catch (e: SecurityException) {
+                val intentSender = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    android.provider.MediaStore.createDeleteRequest(context.contentResolver, listOf(songUri)).intentSender
+                } else {
+                    (e as? android.app.RecoverableSecurityException)?.userAction?.actionIntent?.intentSender
+                }
+                intentSender?.let {
+                    securityLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build())
+                }
+            } catch (e: Exception) { /* nada a fazer, evita derrubar o app */ }
+        }
+    }
+
+    fun shareSong() {
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "audio/*"
+            putExtra(android.content.Intent.EXTRA_STREAM, songUri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(android.content.Intent.createChooser(intent, "Compartilhar música"))
+    }
+
+    fun setAsRingtone() {
+        if (!android.provider.Settings.System.canWrite(context)) {
+            // Precisa de uma permissão especial do sistema — abre a tela
+            // certa em vez de simplesmente falhar em silêncio.
+            context.startActivity(
+                android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                    android.net.Uri.parse("package:${context.packageName}")
+                )
+            )
+            return
+        }
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Audio.Media.IS_RINGTONE, true)
+                }
+                context.contentResolver.update(songUri, values, null, null)
+                android.media.RingtoneManager.setActualDefaultRingtoneUri(
+                    context, android.media.RingtoneManager.TYPE_RINGTONE, songUri
+                )
+            } catch (e: Exception) { /* alguns fabricantes bloqueiam isso fora das configurações do sistema */ }
+        }
+    }
+
+    if (showActionSheet) {
+        ActionSheet(
+            onDismiss = { showActionSheet = false; onDismiss() },
+            title = song.title,
+            subtitle = song.artist,
+            items = listOf(
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.SkipNext, "Tocar em seguida") {
+                    showActionSheet = false; onPlayNext()
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
+                    showActionSheet = false; onAddToQueueEnd()
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlaylistAdd, "Adicionar à playlist") {
+                    showActionSheet = false; showPlaylistPicker = true
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.ContentCut, "Cortar") {
+                    showActionSheet = false; showTrimDialog = true
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Edit, "Renomear") {
+                    showActionSheet = false; showRenameDialog = true
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Image, "Mudar capa") {
+                    showActionSheet = false; coverPickerLauncher.launch(arrayOf("image/*"))
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.MusicNote, "Definir como toque de chamada") {
+                    showActionSheet = false; setAsRingtone(); onDismiss()
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Share, "Compartilhar") {
+                    showActionSheet = false; shareSong(); onDismiss()
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.DriveFileRenameOutline, "Editar nome do arquivo") {
+                    showActionSheet = false; showEditFileNameDialog = true
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Info, "Propriedades") {
+                    showActionSheet = false; showPropertiesDialog = true
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.VisibilityOff, "Ocultar música") {
+                    showActionSheet = false
+                    scope.launch { dao.setSongHidden(song.id, true) }
+                    onDismiss()
+                },
+                com.harmonic.player.ui.common.ActionSheetItem(
+                    Icons.Filled.Delete, "Excluir",
+                    tint = MaterialTheme.colorScheme.error
+                ) {
+                    showActionSheet = false; showDeleteConfirm = true
+                }
+            )
+        )
     }
 
     if (showPlaylistPicker) {
         val playlists by dao.getPlaylists().collectAsState(initial = emptyList())
         AlertDialog(
-            onDismissRequest = { showPlaylistPicker = false },
+            onDismissRequest = { showPlaylistPicker = false; onDismiss() },
             title = { Text("Adicionar a qual playlist?") },
             text = {
                 Column {
@@ -564,6 +1122,7 @@ private fun SongOptionsSheet(
                                 scope.launch {
                                     val currentCount = dao.getPlaylistSongs(playlist.id).first().size
                                     dao.addToPlaylist(PlaylistSongCrossRef(playlist.id, song.id, currentCount))
+                                    dao.touchPlaylist(playlist.id)
                                 }
                                 showPlaylistPicker = false
                                 onDismiss()
@@ -581,7 +1140,7 @@ private fun SongOptionsSheet(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showPlaylistPicker = false }) { Text("Fechar") }
+                TextButton(onClick = { showPlaylistPicker = false; onDismiss() }) { Text("Fechar") }
             }
         )
     }
@@ -589,7 +1148,7 @@ private fun SongOptionsSheet(
     if (showCreatePlaylistDialog) {
         var newName by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showCreatePlaylistDialog = false },
+            onDismissRequest = { showCreatePlaylistDialog = false; onDismiss() },
             title = { Text("Nova playlist") },
             text = {
                 OutlinedTextField(
@@ -613,8 +1172,188 @@ private fun SongOptionsSheet(
                 ) { Text("Criar e adicionar") }
             },
             dismissButton = {
-                TextButton(onClick = { showCreatePlaylistDialog = false }) { Text("Cancelar") }
+                TextButton(onClick = { showCreatePlaylistDialog = false; onDismiss() }) { Text("Cancelar") }
             }
         )
     }
+
+    if (showRenameDialog) {
+        var newTitle by remember { mutableStateOf(song.title) }
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false; onDismiss() },
+            title = { Text("Renomear música") },
+            text = {
+                OutlinedTextField(
+                    value = newTitle,
+                    onValueChange = { newTitle = it },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newTitle.isNotBlank(),
+                    onClick = {
+                        scope.launch { dao.renameSong(song.id, newTitle.trim()) }
+                        showRenameDialog = false
+                        onDismiss()
+                    }
+                ) { Text("Salvar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = false; onDismiss() }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    if (showEditFileNameDialog) {
+        var newFileName by remember {
+            mutableStateOf(java.io.File(song.path).nameWithoutExtension)
+        }
+        AlertDialog(
+            onDismissRequest = { showEditFileNameDialog = false; onDismiss() },
+            title = { Text("Editar nome do arquivo") },
+            text = {
+                Column {
+                    Text(
+                        "Isso renomeia o arquivo de verdade no armazenamento, não só o título mostrado no app.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newFileName,
+                        onValueChange = { newFileName = it },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newFileName.isNotBlank(),
+                    onClick = {
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                val values = android.content.ContentValues().apply {
+                                    put(android.provider.MediaStore.Audio.Media.DISPLAY_NAME, "${newFileName.trim()}.${song.format.lowercase()}")
+                                }
+                                context.contentResolver.update(songUri, values, null, null)
+                            } catch (e: SecurityException) {
+                                val intentSender = if (android.os.Build.VERSION.SDK_INT >= 29) {
+                                    (e as? android.app.RecoverableSecurityException)?.userAction?.actionIntent?.intentSender
+                                } else null
+                                intentSender?.let {
+                                    securityLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build())
+                                }
+                            } catch (e: Exception) { /* ignora, evita derrubar o app */ }
+                        }
+                        showEditFileNameDialog = false
+                        onDismiss()
+                    }
+                ) { Text("Renomear arquivo") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditFileNameDialog = false; onDismiss() }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    if (showTrimDialog) {
+        var start by remember { mutableStateOf(song.trimStartMs.toFloat()) }
+        var end by remember { mutableStateOf((song.trimEndMs.takeIf { it > 0 } ?: song.durationMs).toFloat()) }
+        AlertDialog(
+            onDismissRequest = { showTrimDialog = false; onDismiss() },
+            title = { Text("Cortar música") },
+            text = {
+                Column {
+                    Text(
+                        "Ajusta só onde a reprodução começa/termina — não recodifica nem altera o arquivo original.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("Início: ${formatDuration(start.toLong())}")
+                    Slider(
+                        value = start,
+                        onValueChange = { if (it < end) start = it },
+                        valueRange = 0f..song.durationMs.toFloat()
+                    )
+                    Text("Fim: ${formatDuration(end.toLong())}")
+                    Slider(
+                        value = end,
+                        onValueChange = { if (it > start) end = it },
+                        valueRange = 0f..song.durationMs.toFloat()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { dao.setTrimPoints(song.id, start.toLong(), end.toLong()) }
+                    showTrimDialog = false
+                    onDismiss()
+                }) { Text("Salvar") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    scope.launch { dao.setTrimPoints(song.id, 0, 0) }
+                    showTrimDialog = false
+                    onDismiss()
+                }) { Text("Remover corte") }
+            }
+        )
+    }
+
+    if (showPropertiesDialog) {
+        AlertDialog(
+            onDismissRequest = { showPropertiesDialog = false; onDismiss() },
+            title = { Text("Propriedades") },
+            text = {
+                Column {
+                    PropertyRow("Título", song.title)
+                    PropertyRow("Artista", song.artist)
+                    PropertyRow("Álbum", song.album)
+                    PropertyRow("Duração", formatDuration(song.durationMs))
+                    PropertyRow("Formato", song.format)
+                    if (song.bitrate != null) PropertyRow("Bitrate", "${song.bitrate / 1000} kbps")
+                    PropertyRow("Tamanho", "${song.sizeBytes / 1024 / 1024} MB")
+                    PropertyRow("Caminho", song.path)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPropertiesDialog = false; onDismiss() }) { Text("Fechar") }
+            }
+        )
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false; onDismiss() },
+            title = { Text("Excluir música?") },
+            text = { Text("\"${song.title}\" será apagada do dispositivo. Essa ação não pode ser desfeita.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteSong()
+                    showDeleteConfirm = false
+                    onDismiss()
+                }) { Text("Excluir", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false; onDismiss() }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun PropertyRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(90.dp))
+        Text(value, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+private fun formatDuration(ms: Long): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
 }

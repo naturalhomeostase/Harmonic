@@ -26,6 +26,14 @@ object AlbumArtLoader {
 
     suspend fun load(context: Context, song: Song, sizePx: Int = 512): Bitmap? = withContext(Dispatchers.IO) {
         try {
+            // Capa escolhida manualmente pelo usuário ("Mudar capa" no menu
+            // da música) tem prioridade sobre a capa embutida no arquivo.
+            val customUri = song.customCoverUri
+            if (customUri != null) {
+                context.contentResolver.openInputStream(Uri.parse(customUri))?.use {
+                    return@withContext BitmapFactory.decodeStream(it)
+                }
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.mediaStoreId)
                 context.contentResolver.loadThumbnail(uri, Size(sizePx, sizePx), null)

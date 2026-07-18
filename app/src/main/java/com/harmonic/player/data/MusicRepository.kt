@@ -56,10 +56,18 @@ class MusicRepository(
             if (existing != null) {
                 fresh.copy(
                     id = existing.id,
+                    // Título preservado: uma vez que a música existe no
+                    // banco, ela vira a fonte da verdade — sem isso, usar
+                    // "Renomear" seria resetado no próximo re-scan.
+                    title = existing.title,
                     isFavorite = existing.isFavorite,
                     playCount = existing.playCount,
                     lastPlayedAt = existing.lastPlayedAt,
-                    playbackPositionMs = existing.playbackPositionMs
+                    playbackPositionMs = existing.playbackPositionMs,
+                    isHidden = existing.isHidden,
+                    customCoverUri = existing.customCoverUri,
+                    trimStartMs = existing.trimStartMs,
+                    trimEndMs = existing.trimEndMs
                 )
             } else fresh
         }

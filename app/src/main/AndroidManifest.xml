@@ -18,6 +18,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
+    <!-- "Definir como toque de chamada": permissão especial, concedida só
+         pela tela de configurações do sistema (não por um diálogo padrão) -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
     <application
         android:name=".HarmonicApp"
         android:allowBackup="true"

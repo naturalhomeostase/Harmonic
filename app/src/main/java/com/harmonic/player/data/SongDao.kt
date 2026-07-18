@@ -11,36 +11,104 @@ interface SongDao {
     @Query("SELECT * FROM songs")
     suspend fun getAllSongsOnce(): List<Song>
 
-    @Query("SELECT * FROM songs ORDER BY title COLLATE NOCASE ASC")
+    @Query("SELECT * FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY title COLLATE NOCASE ASC")
     fun getAllSongs(): Flow<List<Song>>
 
-    @Query("SELECT * FROM songs WHERE title LIKE '%' || :query || '%' " +
-           "OR artist LIKE '%' || :query || '%' OR album LIKE '%' || :query || '%'")
+    @Query("SELECT * FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 AND " +
+           "(title LIKE '%' || :query || '%' " +
+           "OR artist LIKE '%' || :query || '%' OR album LIKE '%' || :query || '%')")
     fun search(query: String): Flow<List<Song>>
 
-    @Query("SELECT DISTINCT artist FROM songs ORDER BY artist COLLATE NOCASE ASC")
+    @Query("SELECT DISTINCT artist FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY artist COLLATE NOCASE ASC")
     fun getArtists(): Flow<List<String>>
 
     @Query("SELECT * FROM songs WHERE artist = :artist ORDER BY album, trackNumber")
     fun getSongsByArtist(artist: String): Flow<List<Song>>
 
-    @Query("SELECT DISTINCT album, albumId FROM songs ORDER BY album COLLATE NOCASE ASC")
+    @Query("SELECT DISTINCT album, albumId FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY album COLLATE NOCASE ASC")
     fun getAlbums(): Flow<List<AlbumSummary>>
 
     @Query("SELECT * FROM songs WHERE albumId = :albumId ORDER BY trackNumber")
     fun getSongsByAlbum(albumId: Long): Flow<List<Song>>
 
-    @Query("SELECT DISTINCT genre FROM songs WHERE genre IS NOT NULL ORDER BY genre ASC")
+    @Query("SELECT * FROM songs WHERE albumId = :albumId LIMIT 1")
+    suspend fun getFirstSongForAlbum(albumId: Long): Song?
+
+    @Query("SELECT DISTINCT genre FROM songs WHERE genre IS NOT NULL AND folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY genre ASC")
     fun getGenres(): Flow<List<String>>
 
     @Query("SELECT * FROM songs WHERE genre = :genre ORDER BY title")
     fun getSongsByGenre(genre: String): Flow<List<Song>>
 
-    @Query("SELECT DISTINCT folder FROM songs ORDER BY folder ASC")
+    @Query("SELECT DISTINCT folder FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY folder ASC")
     fun getFolders(): Flow<List<String>>
+
+    /** Todas as pastas, mesmo as escondidas — usada só na tela "Pastas ocultas". */
+    @Query("SELECT DISTINCT folder FROM songs ORDER BY folder ASC")
+    fun getAllFoldersIncludingHidden(): Flow<List<String>>
 
     @Query("SELECT * FROM songs WHERE folder = :folder ORDER BY title")
     fun getSongsByFolder(folder: String): Flow<List<Song>>
+
+    // ---------- Pastas ocultas ----------
+
+    @Query("SELECT path FROM hidden_folders")
+    fun getHiddenFolders(): Flow<List<String>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun hideFolder(folder: HiddenFolder)
+
+    @Query("DELETE FROM hidden_folders WHERE path = :path")
+    suspend fun unhideFolder(path: String)
+
+    // ---------- Edição de música (menu de opções) ----------
+
+    @Query("SELECT * FROM songs WHERE id = :songId")
+    suspend fun getSongById(songId: Long): Song?
+
+    @Query("UPDATE songs SET isHidden = :hidden WHERE id = :songId")
+    suspend fun setSongHidden(songId: Long, hidden: Boolean)
+
+    @Query("UPDATE songs SET title = :title WHERE id = :songId")
+    suspend fun renameSong(songId: Long, title: String)
+
+    @Query("UPDATE songs SET customCoverUri = :uri WHERE id = :songId")
+    suspend fun setCustomCover(songId: Long, uri: String?)
+
+    @Query("UPDATE songs SET trimStartMs = :startMs, trimEndMs = :endMs WHERE id = :songId")
+    suspend fun setTrimPoints(songId: Long, startMs: Long, endMs: Long)
+
+    @Query("DELETE FROM songs WHERE id = :songId")
+    suspend fun deleteSongById(songId: Long)
+
+    // ---------- Artistas / álbuns (renomear, excluir, favoritar) ----------
+
+    @Query("UPDATE songs SET artist = :newName WHERE artist = :oldName")
+    suspend fun renameArtist(oldName: String, newName: String)
+
+    @Query("DELETE FROM songs WHERE artist = :artist")
+    suspend fun deleteSongsByArtist(artist: String)
+
+    @Query("UPDATE songs SET album = :newName WHERE albumId = :albumId")
+    suspend fun renameAlbum(albumId: Long, newName: String)
+
+    @Query("DELETE FROM songs WHERE albumId = :albumId")
+    suspend fun deleteSongsByAlbum(albumId: Long)
+
+    @Query("DELETE FROM songs WHERE folder = :folder")
+    suspend fun deleteSongsByFolder(folder: String)
+
+    @Query("INSERT OR REPLACE INTO artist_meta (name, isFavorite) VALUES (:name, :isFavorite)")
+    suspend fun setArtistFavorite(name: String, isFavorite: Boolean)
+
+    @Query("SELECT name FROM artist_meta WHERE isFavorite = 1")
+    fun getFavoriteArtistNames(): Flow<List<String>>
+
+    @Query("INSERT OR REPLACE INTO album_meta (albumId, isFavorite) VALUES (:albumId, :isFavorite)")
+    suspend fun setAlbumFavorite(albumId: Long, isFavorite: Boolean)
+
+    @Query("SELECT albumId FROM album_meta WHERE isFavorite = 1")
+    fun getFavoriteAlbumIds(): Flow<List<Long>>
 
     // ---------- Favoritos / mais tocadas / recentes ----------
 
@@ -100,6 +168,15 @@ interface SongDao {
 
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     suspend fun deletePlaylist(playlistId: Long)
+
+    @Query("UPDATE playlists SET isFavorite = :isFavorite WHERE id = :playlistId")
+    suspend fun setPlaylistFavorite(playlistId: Long, isFavorite: Boolean)
+
+    @Query("UPDATE playlists SET modifiedAt = :timestamp WHERE id = :playlistId")
+    suspend fun touchPlaylist(playlistId: Long, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE playlists SET name = :name, modifiedAt = :timestamp WHERE id = :playlistId")
+    suspend fun renamePlaylist(playlistId: Long, name: String, timestamp: Long = System.currentTimeMillis())
 
     // ---------- Marcadores (bookmarks) ----------
 

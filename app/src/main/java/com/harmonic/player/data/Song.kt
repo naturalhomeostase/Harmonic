@@ -38,5 +38,12 @@ data class Song(
     val isFavorite: Boolean = false,
     val playCount: Int = 0,
     val lastPlayedAt: Long? = null,
-    val playbackPositionMs: Long = 0
+    val playbackPositionMs: Long = 0,
+    // --- adicionados na fase 3 ---
+    val isHidden: Boolean = false,
+    /** Uri de uma imagem escolhida pelo usuário pra essa música (sobrepõe a capa embutida no arquivo). */
+    val customCoverUri: String? = null,
+    /** "Corte": pontos de início/fim usados na reprodução (0 = usa a música inteira). Não recodifica o arquivo. */
+    val trimStartMs: Long = 0,
+    val trimEndMs: Long = 0
 )

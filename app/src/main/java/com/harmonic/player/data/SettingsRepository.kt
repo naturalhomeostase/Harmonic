@@ -51,7 +51,9 @@ class SettingsRepository(private val context: Context) {
         val BACKGROUND_BLUR_RADIUS = intPreferencesKey("background_blur_radius") // em dp, 0-40
         val BACKGROUND_SCRIM_ALPHA = intPreferencesKey("background_scrim_alpha") // 0-100 (%)
         val TITLE_GRADIENT_ENABLED = booleanPreferencesKey("title_gradient_enabled")
-        val TITLE_GRADIENT_MODE = stringPreferencesKey("title_gradient_mode") // "theme" | "monochrome"
+        val TITLE_GRADIENT_COLOR_START = intPreferencesKey("title_gradient_color_start")
+        val TITLE_GRADIENT_COLOR_END = intPreferencesKey("title_gradient_color_end")
+        val ALBUM_GRID_VIEW = booleanPreferencesKey("album_grid_view")
         val THEME_MODE = stringPreferencesKey("theme_mode") // "light" | "dark" | "amoled" | "system"
         val IGNORED_FOLDERS = stringSetPreferencesKey("ignored_folders")
         val CROSSFADE_MS = intPreferencesKey("crossfade_ms")
@@ -86,10 +88,12 @@ class SettingsRepository(private val context: Context) {
     // cores do tema de gradiente ativo (ou "Meia-noite" se o fundo for uma
     // imagem/foto, já que nesse caso não há uma paleta de gradiente ativa).
     val titleGradientEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_ENABLED] ?: false }
-    // "theme" = usa as cores do tema de gradiente ativo (várias cores).
-    // "monochrome" = usa só a cor de destaque, indo de mais clara pra mais
-    // escura — mais discreto, e funciona bem mesmo com fundo de foto/imagem.
-    val titleGradientMode: Flow<String> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_MODE] ?: "theme" }
+    // Cores do gradiente de título escolhidas livremente pelo usuário (roda de
+    // cores, não presets). null nos dois = usa as cores do tema de fundo
+    // ativo, como antes — assim quem nunca mexeu nisso não percebe diferença.
+    val titleGradientColorStart: Flow<Int?> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_COLOR_START] }
+    val titleGradientColorEnd: Flow<Int?> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_COLOR_END] }
+    val albumGridView: Flow<Boolean> = context.dataStore.data.map { it[Keys.ALBUM_GRID_VIEW] ?: false }
     // Padrão "dark", não "system": o app sempre mostra uma imagem de fundo
     // com véu escuro por cima, então texto escuro (o que aconteceria no
     // tema claro do sistema) fica ilegível. Continua possível escolher
@@ -147,8 +151,23 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.TITLE_GRADIENT_ENABLED] = enabled }
     }
 
-    suspend fun setTitleGradientMode(mode: String) {
-        context.dataStore.edit { it[Keys.TITLE_GRADIENT_MODE] = mode }
+    suspend fun setTitleGradientColors(startArgb: Int, endArgb: Int) {
+        context.dataStore.edit {
+            it[Keys.TITLE_GRADIENT_COLOR_START] = startArgb
+            it[Keys.TITLE_GRADIENT_COLOR_END] = endArgb
+        }
+    }
+
+    /** Volta a usar as cores do tema de fundo ativo em vez de uma cor customizada. */
+    suspend fun clearTitleGradientColors() {
+        context.dataStore.edit {
+            it.remove(Keys.TITLE_GRADIENT_COLOR_START)
+            it.remove(Keys.TITLE_GRADIENT_COLOR_END)
+        }
+    }
+
+    suspend fun setAlbumGridView(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.ALBUM_GRID_VIEW] = enabled }
     }
 
     suspend fun setThemeMode(mode: String) {

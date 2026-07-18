@@ -164,7 +164,7 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
                 settings = app.settings,
                 onSongClick = { queue, index -> playerController.playQueue(queue, index) },
                 onOpenNowPlaying = { navController.navigate("now_playing") },
-                onOpenSettings = { navController.navigate("appearance") },
+                onOpenSettings = { navController.navigate("settings") },
                 onOpenPlaylists = { navController.navigate("playlists") }
             )
         }
@@ -174,6 +174,20 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
                 dao = app.database.songDao(),
                 onBack = { navController.popBackStack() },
                 onOpenEqualizer = { navController.navigate("equalizer") }
+            )
+        }
+        composable("settings") {
+            com.harmonic.player.ui.settings.SettingsScreen(
+                settings = app.settings,
+                onBack = { navController.popBackStack() },
+                onOpenTheme = { navController.navigate("appearance") },
+                onOpenHiddenFolders = { navController.navigate("hidden_folders") }
+            )
+        }
+        composable("hidden_folders") {
+            com.harmonic.player.ui.settings.HiddenFoldersScreen(
+                database = app.database,
+                onBack = { navController.popBackStack() }
             )
         }
         composable("appearance") {

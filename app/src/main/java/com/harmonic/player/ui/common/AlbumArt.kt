@@ -1,6 +1,7 @@
 package com.harmonic.player.ui.common
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.AlbumArtLoader
 import com.harmonic.player.data.Song
 
@@ -33,17 +35,20 @@ private val albumArtCache = object : LinkedHashMap<Long, Bitmap?>(64, 0.75f, tru
 
 /**
  * Mostra a capa real do álbum (embutida no arquivo de áudio) ou, se a
- * música não tiver capa, uma caixa transparente com uma linha fina
- * marcando onde a capa apareceria (mais um ícone discreto de nota musical)
- * — em vez de uma caixa colorida sólida quebrando a continuidade visual
- * com o resto da tela.
- *
- * [shape] deve combinar com o `clip` que quem chama aplica por fora (ex:
- * `RoundedCornerShape(8.dp)` numa miniatura de lista, `CircleShape` no
- * disco de vinil), pra a linha fina acompanhar o contorno certo.
+ * música não tiver capa, um ícone discreto de nota musical sobre fundo
+ * transparente — deixando o papel de parede/gradiente do app aparecer por
+ * trás, em vez de uma caixa cinza sólida quebrando a continuidade visual.
+ * Quando vazio, agora desenha uma linha fina marcando os limites da caixa
+ * (antes ficava só transparente, sem nenhum contorno) — vale pra qualquer
+ * lugar que use este componente (lista, mini player, etc.); a tela "Agora
+ * Tocando" tem seu próprio vinil e não usa este composable.
  */
 @Composable
-fun AlbumArt(song: Song?, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(8.dp)) {
+fun AlbumArt(
+    song: Song?,
+    modifier: Modifier = Modifier,
+    placeholderShape: Shape = RoundedCornerShape(6.dp)
+) {
     val context = LocalContext.current
 
     val bitmap by produceState<Bitmap?>(initialValue = song?.id?.let { albumArtCache[it] }, key1 = song?.id) {
@@ -63,10 +68,8 @@ fun AlbumArt(song: Song?, modifier: Modifier = Modifier, shape: Shape = RoundedC
 
     Box(
         modifier = if (bitmap == null) {
-            modifier.border(1.dp, Color.White.copy(alpha = 0.25f), shape)
-        } else {
-            modifier
-        },
+            modifier.border(BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)), placeholderShape)
+        } else modifier,
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {

@@ -48,6 +48,9 @@ private val accentPresets = listOf(
     Color(0xFFFFCA28), Color(0xFFFFA726), Color(0xFFF8BBD0), Color(0xFFB388FF)
 )
 
+/** Qual das duas cores do gradiente de título está sendo editada no momento. */
+private enum class GradientSwatch { START, END }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
@@ -61,7 +64,8 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
     val blurRadius by settings.backgroundBlurRadius.collectAsState(initial = 0)
     val scrimAlpha by settings.backgroundScrimAlpha.collectAsState(initial = 45)
     val titleGradientEnabled by settings.titleGradientEnabled.collectAsState(initial = false)
-    val titleGradientMode by settings.titleGradientMode.collectAsState(initial = "theme")
+    val titleGradientColorStart by settings.titleGradientColorStart.collectAsState(initial = null)
+    val titleGradientColorEnd by settings.titleGradientColorEnd.collectAsState(initial = null)
 
     var showCustomColorDialog by remember { mutableStateOf(false) }
 
@@ -107,15 +111,18 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 item {
                     // Botão "+": abre o seletor de cor personalizada, com
                     // liberdade total (RGB), em vez de ficar preso a presets.
+                    // Fundo transparente (só uma borda pontilhada-like sutil)
+                    // pra não competir visualmente com as cores sólidas ao lado.
                     Box(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .background(Color.Transparent)
+                            .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape)
                             .clickable { showCustomColorDialog = true },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Filled.Add, contentDescription = "Cor personalizada")
+                        Icon(Icons.Filled.Add, contentDescription = "Cor personalizada", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
                 items(accentPresets) { color ->
@@ -165,9 +172,9 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(24.dp))
 
-            Text("Gradientes (sem imagem, mais leve)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text("Fundo do app", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Text(
-                "Toque em um tema para aplicar — o preview acima mostra exatamente como o app vai ficar.",
+                "Gradientes leves ou uma imagem — toque pra aplicar. O preview acima mostra exatamente como fica.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -187,7 +194,8 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 accentColor = currentAccent?.let { Color(it) } ?: MaterialTheme.colorScheme.primary,
                 scrimAlphaPercent = scrimAlpha,
                 titleGradientEnabled = titleGradientEnabled,
-                titleGradientMode = titleGradientMode,
+                titleColorStart = titleGradientColorStart?.let { Color(it) },
+                titleColorEnd = titleGradientColorEnd?.let { Color(it) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(0.62f)
@@ -196,8 +204,11 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Linha horizontal de temas — rolagem lateral em vez da grade
-            // vertical de antes, deixando o preview acima como protagonista.
+            // Uma única linha horizontal: gradientes primeiro, imagens
+            // inclusas logo em seguida (mesmo tamanho de cartão, rolagem
+            // lateral só), e o card "da galeria" no final — transparente,
+            // só com um "+", pra convidar a escolher uma foto própria sem
+            // brigar visualmente com as opções já prontas.
             androidx.compose.foundation.lazy.LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 4.dp)
@@ -206,7 +217,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                     val isSelected = currentCustomBg == null && currentWallpaper == null && currentGradient == theme.name
                     Box(
                         modifier = Modifier
-                            .size(width = 84.dp, height = 96.dp)
+                            .size(width = 88.dp, height = 120.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .background(Brush.linearGradient(theme.colorsArgb.map { Color(it) }))
                             .then(
@@ -239,6 +250,96 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                         )
                     }
                 }
+
+                items(DefaultWallpaper.values().toList()) { wallpaper ->
+                    val isSelected = currentCustomBg == null && currentWallpaper == wallpaper.name
+                    Box(
+                        modifier = Modifier
+                            .size(width = 88.dp, height = 120.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { scope.launch { settings.setDefaultWallpaper(wallpaper) } }
+                    ) {
+                        AsyncImage(
+                            model = "file:///android_asset/${wallpaper.assetPath}",
+                            contentDescription = wallpaper.label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(6.dp)
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                            }
+                        }
+                        Text(
+                            wallpaper.label,
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 2,
+                            modifier = Modifier.padding(6.dp)
+                        )
+                    }
+                }
+
+                item {
+                    // Card "da sua galeria" — fundo transparente com borda
+                    // e "+" na cor de destaque, pra ficar claro que é uma
+                    // ação diferente das opções prontas ao lado, sem ser um
+                    // bloco sólido chamando mais atenção que elas.
+                    val isSelected = currentCustomBg != null
+                    Box(
+                        modifier = Modifier
+                            .size(width = 88.dp, height = 120.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Transparent)
+                            .border(
+                                1.5.dp,
+                                MaterialTheme.colorScheme.primary.copy(alpha = if (isSelected) 1f else 0.5f),
+                                RoundedCornerShape(16.dp)
+                            )
+                            .clickable { pickImageLauncher.launch("image/*") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected && currentCustomBg != null) {
+                            AsyncImage(
+                                model = Uri.parse(currentCustomBg),
+                                contentDescription = "Sua foto",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(16.dp))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(6.dp)
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                            }
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Filled.Add, contentDescription = "Escolher da galeria", tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Da galeria",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -266,115 +367,66 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
             }
 
             if (titleGradientEnabled) {
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = titleGradientMode == "theme",
-                        onClick = { scope.launch { settings.setTitleGradientMode("theme") } },
-                        label = { Text("Cores do tema") }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Por padrão usa as duas primeiras cores do tema selecionado acima. " +
+                    "Toque numa bolinha pra escolher qualquer cor livremente, ou em \"Usar cores do tema\" pra voltar ao padrão.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+
+                val activeTheme = com.harmonic.player.data.GradientTheme.values()
+                    .find { it.name == currentGradient } ?: com.harmonic.player.data.GradientTheme.MIDNIGHT
+                val previewStart = titleGradientColorStart?.let { Color(it) } ?: Color(activeTheme.colorsArgb[0])
+                val previewEnd = titleGradientColorEnd?.let { Color(it) } ?: Color(activeTheme.colorsArgb.last())
+                var editingGradientSwatch by remember { mutableStateOf<GradientSwatch?>(null) }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Cor inicial", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.8f))
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(previewStart)
+                            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                            .clickable { editingGradientSwatch = GradientSwatch.START }
                     )
-                    FilterChip(
-                        selected = titleGradientMode == "monochrome",
-                        onClick = { scope.launch { settings.setTitleGradientMode("monochrome") } },
-                        label = { Text("Tom único (clara → escura)") }
+                    Spacer(Modifier.width(20.dp))
+                    Text("Cor final", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.8f))
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(previewEnd)
+                            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                            .clickable { editingGradientSwatch = GradientSwatch.END }
+                    )
+                }
+
+                if (titleGradientColorStart != null || titleGradientColorEnd != null) {
+                    TextButton(onClick = { scope.launch { settings.clearTitleGradientColors() } }) {
+                        Text("Usar cores do tema")
+                    }
+                }
+
+                editingGradientSwatch?.let { swatch ->
+                    CustomColorPickerDialog(
+                        initialColor = if (swatch == GradientSwatch.START) previewStart else previewEnd,
+                        onDismiss = { editingGradientSwatch = null },
+                        onConfirm = { color ->
+                            val newStart = if (swatch == GradientSwatch.START) color else previewStart
+                            val newEnd = if (swatch == GradientSwatch.END) color else previewEnd
+                            scope.launch { settings.setTitleGradientColors(newStart.toArgb(), newEnd.toArgb()) }
+                            editingGradientSwatch = null
+                        }
                     )
                 }
             }
 
             Spacer(Modifier.height(24.dp))
-
-            Text("Imagem de fundo", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Escolha um dos fundos inclusos ou uma foto da sua galeria.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(12.dp))
-
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.height(560.dp)
-            ) {
-                item {
-                    // Card "Escolher da galeria" — sempre primeiro, pra ficar
-                    // fácil de achar.
-                    val isSelected = currentCustomBg != null
-                    Box(
-                        modifier = Modifier
-                            .aspectRatio(0.6f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { pickImageLauncher.launch("image/*") },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isSelected && currentCustomBg != null) {
-                            AsyncImage(
-                                model = Uri.parse(currentCustomBg),
-                                contentDescription = "Sua foto",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp)
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            }
-                        } else {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Filled.Photo, contentDescription = null)
-                                Spacer(Modifier.height(4.dp))
-                                Text("Da galeria", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                }
-                items(DefaultWallpaper.values().toList()) { wallpaper ->
-                    val isSelected = currentCustomBg == null && currentWallpaper == wallpaper.name
-                    Box(
-                        modifier = Modifier
-                            .aspectRatio(0.6f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { scope.launch { settings.setDefaultWallpaper(wallpaper) } }
-                    ) {
-                        AsyncImage(
-                            model = "file:///android_asset/${wallpaper.assetPath}",
-                            contentDescription = wallpaper.label,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        if (isSelected) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp)
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            }
-                        }
-                        Text(
-                            wallpaper.label,
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(8.dp)
-                        )
-                    }
-                }
-            }
         }
     }
 
@@ -404,7 +456,8 @@ private fun AppearancePreviewMockup(
     accentColor: Color,
     scrimAlphaPercent: Int,
     titleGradientEnabled: Boolean,
-    titleGradientMode: String,
+    titleColorStart: Color? = null,
+    titleColorEnd: Color? = null,
     modifier: Modifier = Modifier
 ) {
     val fakeSongs = listOf("Noite sem fim" to "Coletivo Aurora", "Deriva" to "Baía Sul", "Eco de vidro" to "Marte 91")
@@ -467,11 +520,10 @@ private fun AppearancePreviewMockup(
             Spacer(Modifier.height(16.dp))
 
             val titleBrush = if (titleGradientEnabled) {
-                if (titleGradientMode == "monochrome") {
-                    Brush.linearGradient(listOf(accentColor.copy(alpha = 0.75f), lightenColor(accentColor, 0.55f)))
-                } else {
+                if (titleColorStart != null && titleColorEnd != null)
+                    Brush.linearGradient(listOf(titleColorStart, titleColorEnd))
+                else
                     Brush.linearGradient(gradientTheme.colorsArgb.map { Color(it) })
-                }
             } else null
 
             fakeSongs.forEach { (title, artist) ->
@@ -577,11 +629,3 @@ private suspend fun copyImageToInternalStorage(context: android.content.Context,
             null
         }
     }
-
-/** Clareia uma cor em direção ao branco, por um fator de 0 (sem mudança) a 1 (vira branco). */
-private fun lightenColor(color: Color, factor: Float): Color = Color(
-    red = color.red + (1f - color.red) * factor,
-    green = color.green + (1f - color.green) * factor,
-    blue = color.blue + (1f - color.blue) * factor,
-    alpha = color.alpha
-)

@@ -1,12 +1,16 @@
 package com.harmonic.player.ui.nowplaying
 
+import android.graphics.Bitmap
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -17,16 +21,20 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.AlbumArtLoader
 import com.harmonic.player.data.SongDao
 import com.harmonic.player.playback.PlayerController
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,25 +54,34 @@ fun NowPlayingScreen(
     var showBookmarksSheet by remember { mutableStateOf(false) }
     var lyricsResult by remember { mutableStateOf<com.harmonic.player.data.LyricsResult>(com.harmonic.player.data.LyricsResult.NotFound) }
 
-    // Carrega o bitmap da capa da música atual — usado tanto pro fundo
-    // ambiente borrado quanto pro disco de vinil giratório. Recarrega
-    // automaticamente ao trocar de música.
-    var albumArtBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(state.currentSong?.id) {
-        val song = state.currentSong
-        albumArtBitmap = if (song != null) AlbumArtLoader.load(context, song) else null
+    // Bitmap da capa da música atual — usado em três lugares: fundo desfocado,
+    // arte dentro do vinil giratório, e extração de cor (Palette) pra pintar
+    // o resto da tela com uma cor que combine com a música tocando.
+    val currentSong = state.currentSong
+    val albumBitmap by produceState<Bitmap?>(initialValue = null, key1 = currentSong?.id) {
+        value = currentSong?.let { AlbumArtLoader.load(context, it) }
     }
 
-    // Ângulo do "disco de vinil": gira devagar enquanto toca, e congela
-    // exatamente onde parou quando a música é pausada — como um toca-discos
-    // de verdade, em vez de reiniciar do zero.
-    var vinylRotation by remember { mutableStateOf(0f) }
-    LaunchedEffect(state.isPlaying) {
-        while (state.isPlaying) {
-            delay(16)
-            vinylRotation = (vinylRotation + 0.12f) % 360f
+    val extractedColor by produceState<Color?>(initialValue = null, key1 = albumBitmap) {
+        value = albumBitmap?.let { bmp ->
+            withContext(Dispatchers.Default) {
+                try {
+                    val palette = androidx.palette.graphics.Palette.from(bmp).generate()
+                    val swatch = palette.vibrantSwatch ?: palette.lightVibrantSwatch
+                        ?: palette.dominantSwatch ?: palette.mutedSwatch
+                    swatch?.let { Color(it.rgb) }
+                } catch (e: Exception) {
+                    null
+                }
+            }
         }
     }
+    // Clareia um pouco cores extraídas escuras demais, senão o texto/ícones
+    // que dependem dela ficam ilegíveis sobre o fundo também escuro.
+    val pageAccent = (extractedColor ?: MaterialTheme.colorScheme.primary).let { color ->
+        if (color.luminance() < 0.35f) androidx.compose.ui.graphics.lerp(color, Color.White, 0.35f) else color
+    }
+    val onPageAccent = if (pageAccent.luminance() > 0.6f) Color(0xFF1A1A1A) else Color.White
 
     // Recarrega a letra sempre que a música atual mudar. A leitura do
     // arquivo .lrc/.txt é rápida, mas ainda assim roda fora da thread
@@ -95,13 +112,13 @@ fun NowPlayingScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Fundo ambiente: a própria capa da música, borrada e escurecida —
-        // cada música ganha uma atmosfera visual levemente diferente, em
-        // vez do papel de parede fixo do resto do app. Sem capa, deixa o
-        // fundo padrão do app (definido em AppBackground) aparecer.
-        albumArtBitmap?.let { bitmap ->
+        // Fundo desfocado com a própria capa da música — só aparece quando
+        // a música tem capa de verdade; sem capa, o fundo padrão do app
+        // (imagem/gradiente escolhido em Aparência) continua por trás,
+        // porque o Scaffold logo abaixo é totalmente transparente.
+        albumBitmap?.let { bmp ->
             Image(
-                bitmap = bitmap.asImageBitmap(),
+                bitmap = bmp.asImageBitmap(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -111,18 +128,25 @@ fun NowPlayingScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.55f))
+                    .background(Color.Black.copy(alpha = 0.45f))
             )
         }
 
-        Scaffold(
+        // A cor de destaque desta tela (título, slider, botão de play,
+        // ícones ativos...) passa a vir da própria capa em vez da cor de
+        // destaque fixa do app — só aqui, o resto do app continua igual.
+        MaterialTheme(
+            colorScheme = MaterialTheme.colorScheme.copy(primary = pageAccent),
+            typography = MaterialTheme.typography
+        ) {
+    Scaffold(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Voltar")
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Voltar", tint = Color.White.copy(alpha = 0.9f))
                     }
                 },
                 actions = {
@@ -130,19 +154,19 @@ fun NowPlayingScreen(
                         Icon(
                             Icons.Filled.Subject,
                             contentDescription = if (showLyrics) "Mostrar capa" else "Mostrar letra",
-                            tint = if (showLyrics) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            tint = if (showLyrics) pageAccent else Color.White.copy(alpha = 0.85f)
                         )
                     }
                     IconButton(onClick = { showSleepTimerDialog = true }) {
                         Icon(
                             Icons.Filled.Bedtime,
                             contentDescription = "Sleep timer",
-                            tint = if (state.sleepTimerEndAt != null) MaterialTheme.colorScheme.primary
-                                   else LocalContentColor.current
+                            tint = if (state.sleepTimerEndAt != null) pageAccent
+                                   else Color.White.copy(alpha = 0.85f)
                         )
                     }
                     IconButton(onClick = onOpenEqualizer) {
-                        Icon(Icons.Filled.Equalizer, contentDescription = "Equalizador")
+                        Icon(Icons.Filled.Equalizer, contentDescription = "Equalizador", tint = Color.White.copy(alpha = 0.85f))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -168,29 +192,13 @@ fun NowPlayingScreen(
                         .weight(1f)
                 )
             } else {
-                Box(
+                VinylRecord(
+                    bitmap = albumBitmap,
+                    isPlaying = state.isPlaying,
                     modifier = Modifier
-                        .fillMaxWidth(0.78f)
+                        .fillMaxWidth(0.86f)
                         .aspectRatio(1f)
-                        .align(Alignment.CenterHorizontally)
-                        .graphicsLayer { rotationZ = vinylRotation }
-                        .clip(CircleShape)
-                        .border(3.dp, Color.White.copy(alpha = 0.15f), CircleShape)
-                ) {
-                    com.harmonic.player.ui.common.AlbumArt(
-                        song = state.currentSong,
-                        modifier = Modifier.fillMaxSize(),
-                        shape = CircleShape
-                    )
-                    // "Furo" central do disco, como um vinil de verdade
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(18.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.7f))
-                    )
-                }
+                )
             }
 
             Spacer(Modifier.height(24.dp))
@@ -198,7 +206,7 @@ fun NowPlayingScreen(
             Text(
                 state.currentSong?.title ?: "Nada tocando",
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.primary
+                color = pageAccent
             )
             Text(
                 state.currentSong?.artist ?: "",
@@ -212,7 +220,7 @@ fun NowPlayingScreen(
                 Text(
                     "${song.format} • ${song.bitrate?.let { "${it / 1000} kbps" } ?: ""}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
+                    color = Color.White.copy(alpha = 0.55f)
                 )
             }
 
@@ -232,8 +240,16 @@ fun NowPlayingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(formatDuration(sliderPosition.toLong()), style = MaterialTheme.typography.labelSmall)
-                Text(formatDuration(state.durationMs), style = MaterialTheme.typography.labelSmall)
+                Text(
+                    formatDuration(sliderPosition.toLong()),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.75f)
+                )
+                Text(
+                    formatDuration(state.durationMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.75f)
+                )
             }
 
             Spacer(Modifier.height(8.dp))
@@ -244,13 +260,26 @@ fun NowPlayingScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { playerController.setShuffle(!state.shuffleEnabled) }) {
-                    Icon(Icons.Filled.Shuffle, contentDescription = "Aleatório")
+                    Icon(
+                        Icons.Filled.Shuffle,
+                        contentDescription = "Aleatório",
+                        tint = if (state.shuffleEnabled) pageAccent else Color.White.copy(alpha = 0.85f)
+                    )
                 }
                 IconButton(onClick = { playerController.skipPrevious() }) {
-                    Icon(Icons.Filled.SkipPrevious, contentDescription = "Anterior", modifier = Modifier.size(40.dp))
+                    Icon(
+                        Icons.Filled.SkipPrevious,
+                        contentDescription = "Anterior",
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.size(40.dp)
+                    )
                 }
                 FilledIconButton(
                     onClick = { playerController.togglePlayPause() },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = pageAccent,
+                        contentColor = onPageAccent
+                    ),
                     modifier = Modifier.size(72.dp)
                 ) {
                     Icon(
@@ -260,10 +289,19 @@ fun NowPlayingScreen(
                     )
                 }
                 IconButton(onClick = { playerController.skipNext() }) {
-                    Icon(Icons.Filled.SkipNext, contentDescription = "Próxima", modifier = Modifier.size(40.dp))
+                    Icon(
+                        Icons.Filled.SkipNext,
+                        contentDescription = "Próxima",
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.size(40.dp)
+                    )
                 }
                 IconButton(onClick = { playerController.cycleRepeatMode() }) {
-                    Icon(Icons.Filled.Repeat, contentDescription = "Repetir")
+                    Icon(
+                        Icons.Filled.Repeat,
+                        contentDescription = "Repetir",
+                        tint = Color.White.copy(alpha = 0.85f)
+                    )
                 }
             }
 
@@ -277,7 +315,7 @@ fun NowPlayingScreen(
                 TextButton(onClick = { playerController.setPointA() }) {
                     Text(
                         "A" + if (state.pointA != null) " ✓" else "",
-                        color = if (state.pointA != null) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                        color = if (state.pointA != null) pageAccent else Color.White.copy(alpha = 0.85f)
                     )
                 }
                 TextButton(
@@ -286,12 +324,12 @@ fun NowPlayingScreen(
                 ) {
                     Text(
                         "B" + if (state.pointB != null) " ✓" else "",
-                        color = if (state.pointB != null) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                        color = if (state.pointB != null) pageAccent else Color.White.copy(alpha = 0.85f)
                     )
                 }
                 if (state.pointA != null || state.pointB != null) {
                     IconButton(onClick = { playerController.clearABRepeat() }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Limpar A-B")
+                        Icon(Icons.Filled.Close, contentDescription = "Limpar A-B", tint = Color.White.copy(alpha = 0.85f))
                     }
                 }
 
@@ -309,15 +347,16 @@ fun NowPlayingScreen(
                         )
                     }
                 }) {
-                    Icon(Icons.Filled.BookmarkAdd, contentDescription = "Adicionar marcador")
+                    Icon(Icons.Filled.BookmarkAdd, contentDescription = "Adicionar marcador", tint = Color.White.copy(alpha = 0.85f))
                 }
                 IconButton(onClick = { showBookmarksSheet = true }) {
-                    Icon(Icons.Filled.Bookmarks, contentDescription = "Ver marcadores")
+                    Icon(Icons.Filled.Bookmarks, contentDescription = "Ver marcadores", tint = Color.White.copy(alpha = 0.85f))
                 }
             }
         }
     }
-    }
+    } // fim do MaterialTheme(pageAccent)
+    } // fim do Box de fundo
 
     if (showSleepTimerDialog) {
         SleepTimerDialog(
@@ -348,6 +387,104 @@ fun NowPlayingScreen(
                 showBookmarksSheet = false
             }
         )
+    }
+}
+
+/**
+ * Disco de vinil com a capa do álbum encaixada no centro, girando enquanto
+ * a música toca. Usa um [Animatable] em vez de rememberInfiniteTransition
+ * porque precisamos CONGELAR a rotação exatamente onde ela parou ao
+ * pausar — como um toca-discos de verdade, que não "volta" pro início, só
+ * para de girar ali mesmo.
+ */
+@Composable
+private fun VinylRecord(
+    bitmap: Bitmap?,
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val angle = remember { Animatable(0f) }
+
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                angle.animateTo(
+                    targetValue = angle.value + 360f,
+                    animationSpec = tween(durationMillis = 9000, easing = LinearEasing)
+                )
+            }
+        }
+        // Quando isPlaying vira false, este LaunchedEffect é cancelado pelo
+        // próprio Compose (a key mudou) no meio da animação — angle.value
+        // fica exatamente onde estava, sem precisar de nenhum código extra.
+    }
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { rotationZ = angle.value }
+                .clip(CircleShape)
+                .background(Color(0xFF141414))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape)
+        ) {
+            // Sulcos do vinil — círculos concêntricos bem sutis entre a
+            // borda do disco e a capa no centro.
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val maxRadius = size.minDimension / 2f
+                val grooveCount = 9
+                for (i in 1..grooveCount) {
+                    val r = maxRadius * (0.68f + (i / grooveCount.toFloat()) * 0.30f)
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.05f),
+                        radius = r,
+                        style = Stroke(width = 1.dp.toPx())
+                    )
+                }
+            }
+
+            // Capa do álbum (ou ícone de nota musical) ocupando o miolo do disco
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.62f)
+                    .align(Alignment.Center)
+                    .clip(CircleShape)
+                    .border(2.dp, Color.White.copy(alpha = 0.12f), CircleShape)
+            ) {
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF262626)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.MusicNote,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.45f),
+                            modifier = Modifier.fillMaxSize(0.4f)
+                        )
+                    }
+                }
+            }
+
+            // Furo do eixo, bem no centro
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .align(Alignment.Center)
+                    .clip(CircleShape)
+                    .background(Color(0xFF0A0A0A))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+            )
+        }
     }
 }
 

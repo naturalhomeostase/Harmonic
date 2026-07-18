@@ -132,6 +132,13 @@ class PlayerController(
             currentIndex = index,
             durationMs = controller?.duration?.coerceAtLeast(0) ?: 0
         )
+        // "Corte": se a música tem um ponto de início definido (menu
+        // Cortar), pula direto pra lá em vez de tocar do começo de verdade.
+        // Isso não recodifica o arquivo — só ajusta onde a reprodução
+        // começa/termina, então o arquivo original nunca é alterado.
+        if (song != null && song.trimStartMs > 0) {
+            controller?.seekTo(song.trimStartMs)
+        }
     }
 
     fun playQueue(songs: List<Song>, startIndex: Int) {
@@ -142,7 +149,8 @@ class PlayerController(
             currentIndex = startIndex,
             isPlaying = true // otimista: evita o ícone de play "atrasado" até o callback confirmar
         )
-        controller?.setMediaItems(items, startIndex, 0L)
+        val startPositionMs = songs.getOrNull(startIndex)?.trimStartMs?.takeIf { it > 0 } ?: 0L
+        controller?.setMediaItems(items, startIndex, startPositionMs)
         controller?.prepare()
         controller?.play()
         persistQueueSnapshot()
@@ -239,7 +247,7 @@ class PlayerController(
         _uiState.value = _uiState.value.copy(pointA = null, pointB = null)
     }
 
-    /** Roda durante toda a vida do controller, verificando o A-B repeat periodicamente. */
+    /** Roda durante toda a vida do controller, verificando o A-B repeat e o ponto de fim do corte periodicamente. */
     private fun startABRepeatMonitor() {
         scope.launch {
             while (true) {
@@ -249,6 +257,11 @@ class PlayerController(
                 val b = state.pointB
                 if (a != null && b != null && currentPositionMs() >= b) {
                     controller?.seekTo(a)
+                    continue
+                }
+                val trimEnd = state.currentSong?.trimEndMs ?: 0
+                if (trimEnd > 0 && currentPositionMs() >= trimEnd) {
+                    controller?.seekToNextMediaItem()
                 }
             }
         }
