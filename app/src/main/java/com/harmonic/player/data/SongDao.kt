@@ -22,6 +22,18 @@ interface SongDao {
     @Query("SELECT DISTINCT artist FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY artist COLLATE NOCASE ASC")
     fun getArtists(): Flow<List<String>>
 
+    @Query("""
+        SELECT artist AS name, COUNT(*) AS songCount, COUNT(DISTINCT albumId) AS albumCount
+        FROM songs
+        WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0
+        GROUP BY artist
+        ORDER BY artist COLLATE NOCASE ASC
+    """)
+    fun getArtistSummaries(): Flow<List<ArtistSummary>>
+
+    @Query("SELECT * FROM songs WHERE artist = :artist LIMIT 1")
+    suspend fun getFirstSongForArtist(artist: String): Song?
+
     @Query("SELECT * FROM songs WHERE artist = :artist ORDER BY album, trackNumber")
     fun getSongsByArtist(artist: String): Flow<List<Song>>
 
@@ -191,3 +203,5 @@ interface SongDao {
 }
 
 data class AlbumSummary(val album: String, val albumId: Long)
+
+data class ArtistSummary(val name: String, val songCount: Int, val albumCount: Int)

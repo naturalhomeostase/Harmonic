@@ -128,9 +128,12 @@ class PlaybackService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
-        // Se não estiver tocando, encerra o serviço junto com o app (economiza bateria);
-        // se estiver tocando, mantém rodando em segundo plano.
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
+        // Mantém o serviço (e a notificação com os controles) vivo sempre
+        // que existir uma fila carregada — mesmo pausado. Antes, fechar o
+        // app com a música pausada matava a notificação junto, obrigando a
+        // reabrir o app só pra retomar. Só encerra de vez se não há
+        // absolutamente nada carregado pra tocar.
+        if (player == null || player.mediaItemCount == 0) {
             stopSelf()
         }
         super.onTaskRemoved(rootIntent)

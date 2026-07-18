@@ -38,6 +38,7 @@ fun SettingsScreen(
 ) {
     val scope = rememberCoroutineScope()
     val albumGridView by settings.albumGridView.collectAsState(initial = false)
+    val artistGridView by settings.artistGridView.collectAsState(initial = false)
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -70,6 +71,19 @@ fun SettingsScreen(
                     Switch(
                         checked = albumGridView,
                         onCheckedChange = { scope.launch { settings.setAlbumGridView(it) } }
+                    )
+                }
+            )
+
+            SettingsRow(
+                icon = Icons.Filled.GridView,
+                title = "Visualização em grade dos artistas",
+                subtitle = "Mostra os artistas com foto em grade em vez de lista",
+                onClick = { scope.launch { settings.setArtistGridView(!artistGridView) } },
+                trailing = {
+                    Switch(
+                        checked = artistGridView,
+                        onCheckedChange = { scope.launch { settings.setArtistGridView(it) } }
                     )
                 }
             )

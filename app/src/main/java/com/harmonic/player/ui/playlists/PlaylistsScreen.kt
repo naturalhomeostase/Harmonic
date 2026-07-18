@@ -58,7 +58,16 @@ fun PlaylistsScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Playlists", color = MaterialTheme.colorScheme.primary) },
+                title = {
+                    Column {
+                        Text("Playlists", color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "${playlists.size} playlist(s)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")

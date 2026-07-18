@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCut
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.harmonic.player.data.GradientTheme
 import com.harmonic.player.data.AlbumSummary
+import com.harmonic.player.data.ArtistSummary
 import com.harmonic.player.data.MusicDatabase
 import com.harmonic.player.data.Playlist
 import com.harmonic.player.data.PlaylistSongCrossRef
@@ -112,6 +114,7 @@ fun LibraryScreen(
     val titleGradientColorStart by settings.titleGradientColorStart.collectAsState(initial = null)
     val titleGradientColorEnd by settings.titleGradientColorEnd.collectAsState(initial = null)
     val albumGridView by settings.albumGridView.collectAsState(initial = false)
+    val artistGridView by settings.artistGridView.collectAsState(initial = false)
     val titleBrush = if (titleGradientEnabled) {
         if (titleGradientColorStart != null && titleGradientColorEnd != null) {
             // Cores escolhidas livremente pelo usuário na roda de cores.
@@ -268,6 +271,36 @@ fun LibraryScreen(
                 }
             }
 
+            if (searchQuery.isBlank() && drilledGroup == null && drilledAlbumId == null) {
+                val countText = when (selectedTab) {
+                    LibraryTab.SONGS -> {
+                        val allSongs by dao.getAllSongs().collectAsState(initial = emptyList())
+                        "${allSongs.size} música(s)"
+                    }
+                    LibraryTab.ARTISTS -> {
+                        val allArtists by dao.getArtists().collectAsState(initial = emptyList())
+                        "${allArtists.size} artista(s)"
+                    }
+                    LibraryTab.ALBUMS -> {
+                        val allAlbums by dao.getAlbums().collectAsState(initial = emptyList())
+                        "${allAlbums.size} álbum(ns)"
+                    }
+                    LibraryTab.FAVORITES -> {
+                        val allFavorites by dao.getFavorites().collectAsState(initial = emptyList())
+                        "${allFavorites.size} favorita(s)"
+                    }
+                    else -> null
+                }
+                if (countText != null) {
+                    Text(
+                        countText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
             when {
                 // Busca tem prioridade sobre tudo — mostra resultado direto
                 searchQuery.isNotBlank() -> SongList(
@@ -313,8 +346,26 @@ fun LibraryScreen(
                 }
 
                 selectedTab == LibraryTab.ARTISTS && drilledGroup == null -> {
-                    val artists by dao.getArtists().collectAsState(initial = emptyList())
-                    GroupList(items = artists) { drilledGroup = it }
+                    val artistSummaries by dao.getArtistSummaries().collectAsState(initial = emptyList())
+                    if (artistGridView) {
+                        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(artistSummaries, key = { it.name }) { artist ->
+                                ArtistGridCell(artist = artist, dao = dao) { drilledGroup = artist.name }
+                            }
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            items(artistSummaries, key = { it.name }) { artist ->
+                                ArtistRow(artist = artist, dao = dao) { drilledGroup = artist.name }
+                            }
+                        }
+                    }
                 }
                 selectedTab == LibraryTab.ARTISTS -> {
                     val artistName = drilledGroup!!
@@ -761,6 +812,75 @@ private fun FolderList(folders: List<String>, onClick: (String) -> Unit) {
                 modifier = Modifier.clickable { onClick(folder) }
             )
         }
+    }
+}
+
+/** Uma linha de artista com foto (capa da primeira música dele) e contagem de músicas/álbuns. */
+@Composable
+private fun ArtistRow(artist: ArtistSummary, dao: SongDao, onClick: () -> Unit) {
+    var sampleSong by remember(artist.name) { mutableStateOf<Song?>(null) }
+    LaunchedEffect(artist.name) {
+        sampleSong = dao.getFirstSongForArtist(artist.name)
+    }
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            com.harmonic.player.ui.common.AlbumArt(
+                song = sampleSong,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape),
+                placeholderShape = CircleShape
+            )
+        },
+        headlineContent = { Text(artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White) },
+        supportingContent = {
+            Text(
+                "${artist.songCount} música(s) • ${artist.albumCount} álbum(ns)",
+                color = Color.White.copy(alpha = 0.55f),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    )
+}
+
+/** Célula da grade de artistas: foto circular grande + nome + contagens embaixo. */
+@Composable
+private fun ArtistGridCell(artist: ArtistSummary, dao: SongDao, onClick: () -> Unit) {
+    var sampleSong by remember(artist.name) { mutableStateOf<Song?>(null) }
+    LaunchedEffect(artist.name) {
+        sampleSong = dao.getFirstSongForArtist(artist.name)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+    ) {
+        com.harmonic.player.ui.common.AlbumArt(
+            song = sampleSong,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(CircleShape),
+            placeholderShape = CircleShape
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            artist.name,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            "${artist.songCount} música(s) • ${artist.albumCount} álbum(ns)",
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = Color.White.copy(alpha = 0.55f),
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }
 

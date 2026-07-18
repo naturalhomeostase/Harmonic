@@ -1,6 +1,9 @@
 package com.harmonic.player
 
 import android.Manifest
+import android.content.Intent
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -18,6 +21,7 @@ import androidx.navigation.navArgument
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.harmonic.player.data.Song
 import com.harmonic.player.playback.EqualizerController
 import com.harmonic.player.playback.PlayerController
 import com.harmonic.player.ui.common.AppBackground
@@ -35,6 +39,53 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var playerController: PlayerController
 
+    /** Uri de um áudio aberto vindo de outro app ("Abrir com" / compartilhar). */
+    private var pendingExternalAudioUri by mutableStateOf<Uri?>(null)
+
+    private fun extractAudioUri(intent: Intent?): Uri? = when (intent?.action) {
+        Intent.ACTION_VIEW -> intent.data
+        Intent.ACTION_SEND -> {
+            if (intent.type?.startsWith("audio/") == true) {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            } else null
+        }
+        else -> null
+    }
+
+    /** Monta uma música "avulsa" (não indexada na biblioteca) a partir de um Uri externo, lendo os metadados direto do arquivo. */
+    private fun buildAdHocSongFromUri(uri: Uri): Song {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(this, uri)
+            fun meta(key: Int) = retriever.extractMetadata(key)
+            Song(
+                id = -1,
+                mediaStoreId = -1,
+                title = meta(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Faixa externa",
+                artist = meta(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Desconhecido",
+                album = meta(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "",
+                albumId = -1,
+                genre = meta(MediaMetadataRetriever.METADATA_KEY_GENRE),
+                year = meta(MediaMetadataRetriever.METADATA_KEY_YEAR)?.toIntOrNull(),
+                composer = meta(MediaMetadataRetriever.METADATA_KEY_COMPOSER),
+                trackNumber = null,
+                durationMs = meta(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L,
+                sizeBytes = 0,
+                path = uri.toString(),
+                folder = "",
+                bitrate = meta(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull(),
+                sampleRate = null,
+                format = (contentResolver.getType(uri) ?: "audio").substringAfterLast('/').uppercase(),
+                dateAdded = System.currentTimeMillis(),
+                dateModified = System.currentTimeMillis()
+            )
+        } finally {
+            retriever.release()
+        }
+    }
+
     @OptIn(ExperimentalPermissionsApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,6 +94,8 @@ class MainActivity : ComponentActivity() {
 
         playerController = PlayerController(applicationContext, app.database.songDao(), app.settings)
         playerController.connect()
+
+        pendingExternalAudioUri = extractAudioUri(intent)
 
         setContent {
             val accentColorArgb by app.settings.accentColor.collectAsState(initial = null)
@@ -102,6 +155,21 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        // Se o app foi aberto a partir de "Abrir com" num
+                        // arquivo de áudio (ou um compartilhamento), toca
+                        // direto — mesmo que a música não esteja indexada
+                        // na biblioteca do app.
+                        LaunchedEffect(pendingExternalAudioUri, audioPermissionGranted) {
+                            val uri = pendingExternalAudioUri
+                            if (uri != null && audioPermissionGranted) {
+                                val song = try { buildAdHocSongFromUri(uri) } catch (e: Exception) { null }
+                                if (song != null) {
+                                    playerController.playQueue(listOf(song), 0)
+                                }
+                                pendingExternalAudioUri = null
+                            }
+                        }
+
                         if (audioPermissionGranted) {
                             HarmonicNavHost(playerController, app)
                         } else {
@@ -118,6 +186,12 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         playerController.persistNow()
         super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingExternalAudioUri = extractAudioUri(intent)
     }
 
     override fun onDestroy() {

@@ -54,6 +54,7 @@ class SettingsRepository(private val context: Context) {
         val TITLE_GRADIENT_COLOR_START = intPreferencesKey("title_gradient_color_start")
         val TITLE_GRADIENT_COLOR_END = intPreferencesKey("title_gradient_color_end")
         val ALBUM_GRID_VIEW = booleanPreferencesKey("album_grid_view")
+        val ARTIST_GRID_VIEW = booleanPreferencesKey("artist_grid_view")
         val THEME_MODE = stringPreferencesKey("theme_mode") // "light" | "dark" | "amoled" | "system"
         val IGNORED_FOLDERS = stringSetPreferencesKey("ignored_folders")
         val CROSSFADE_MS = intPreferencesKey("crossfade_ms")
@@ -94,6 +95,7 @@ class SettingsRepository(private val context: Context) {
     val titleGradientColorStart: Flow<Int?> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_COLOR_START] }
     val titleGradientColorEnd: Flow<Int?> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_COLOR_END] }
     val albumGridView: Flow<Boolean> = context.dataStore.data.map { it[Keys.ALBUM_GRID_VIEW] ?: false }
+    val artistGridView: Flow<Boolean> = context.dataStore.data.map { it[Keys.ARTIST_GRID_VIEW] ?: false }
     // Padrão "dark", não "system": o app sempre mostra uma imagem de fundo
     // com véu escuro por cima, então texto escuro (o que aconteceria no
     // tema claro do sistema) fica ilegível. Continua possível escolher
@@ -168,6 +170,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAlbumGridView(enabled: Boolean) {
         context.dataStore.edit { it[Keys.ALBUM_GRID_VIEW] = enabled }
+    }
+
+    suspend fun setArtistGridView(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.ARTIST_GRID_VIEW] = enabled }
     }
 
     suspend fun setThemeMode(mode: String) {
