@@ -91,7 +91,7 @@ fun PlaylistDetailScreen(
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções", tint = Color.White)
                     }
-                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    com.harmonic.player.ui.common.ThemedDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                         DropdownMenuItem(
                             text = { Text("Exportar como M3U") },
                             onClick = {

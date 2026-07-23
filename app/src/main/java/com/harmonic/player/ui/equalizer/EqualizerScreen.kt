@@ -163,7 +163,7 @@ fun EqualizerScreen(
                 OutlinedButton(onClick = { reverbMenuExpanded = true }) {
                     Text(reverbPresetNames.getOrElse(eqState.reverbPreset) { "Nenhum" })
                 }
-                DropdownMenu(expanded = reverbMenuExpanded, onDismissRequest = { reverbMenuExpanded = false }) {
+                com.harmonic.player.ui.common.ThemedDropdownMenu(expanded = reverbMenuExpanded, onDismissRequest = { reverbMenuExpanded = false }) {
                     reverbPresetNames.forEachIndexed { index, name ->
                         DropdownMenuItem(
                             text = { Text(name) },

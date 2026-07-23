@@ -1,5 +1,7 @@
 package com.harmonic.player.ui.settings
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -73,7 +77,12 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
         if (uri != null) {
             scope.launch {
                 val savedPath = copyImageToInternalStorage(context, uri)
-                if (savedPath != null) settings.setCustomBackground(savedPath)
+                if (savedPath != null) {
+                    settings.setCustomBackground(savedPath)
+                    // Mesma lógica dos temas prontos: a cor de destaque passa a
+                    // combinar com a foto escolhida da galeria automaticamente.
+                    accentFromUri(context, savedPath)?.let { settings.setAccentColor(it.toArgb()) }
+                }
             }
         }
     }
@@ -225,7 +234,16 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                                     Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
                                 else Modifier
                             )
-                            .clickable { scope.launch { settings.setGradientTheme(theme) } },
+                            .clickable {
+                                scope.launch {
+                                    settings.setGradientTheme(theme)
+                                    // Cor de destaque acompanha o tema escolhido
+                                    // automaticamente — a opção de escolher uma
+                                    // cor preferida continua disponível acima,
+                                    // bastando tocar nela depois pra sobrescrever.
+                                    settings.setAccentColor(accentFromGradient(theme).toArgb())
+                                }
+                            },
                         contentAlignment = Alignment.BottomStart
                     ) {
                         if (isSelected) {
@@ -257,7 +275,17 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                         modifier = Modifier
                             .size(width = 88.dp, height = 120.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .clickable { scope.launch { settings.setDefaultWallpaper(wallpaper) } }
+                            .clickable {
+                                scope.launch {
+                                    settings.setDefaultWallpaper(wallpaper)
+                                    // Extrai a cor predominante da imagem do tema
+                                    // (assets do próprio app) pra combinar a cor
+                                    // de destaque com o fundo escolhido.
+                                    accentFromAsset(context, wallpaper.assetPath)?.let {
+                                        settings.setAccentColor(it.toArgb())
+                                    }
+                                }
+                            }
                     ) {
                         AsyncImage(
                             model = "file:///android_asset/${wallpaper.assetPath}",
@@ -608,6 +636,67 @@ private fun CustomColorPickerDialog(
             TextButton(onClick = onDismiss) { Text("Cancelar") }
         }
     )
+}
+
+/**
+ * Clareia cores extraídas escuras demais, senão ícones/texto que dependem
+ * dela (que ficam brancos por cima, via [com.harmonic.player.ui.theme.withSingleAccent])
+ * perdem contraste — mesmo ajuste já usado na extração de cor da capa do
+ * álbum na tela Agora Tocando.
+ */
+private fun adjustAccentForReadability(color: Color): Color =
+    if (color.luminance() < 0.35f) lerp(color, Color.White, 0.35f) else color
+
+/**
+ * Extrai uma cor de destaque "vibrante" de um bitmap com a Palette API —
+ * mesma técnica usada pra combinar a cor com a capa do álbum tocando.
+ */
+private fun extractAccentFromBitmap(bitmap: Bitmap): Color? = try {
+    val palette = androidx.palette.graphics.Palette.from(bitmap).generate()
+    val swatch = palette.vibrantSwatch ?: palette.lightVibrantSwatch
+        ?: palette.dominantSwatch ?: palette.mutedSwatch
+    swatch?.let { adjustAccentForReadability(Color(it.rgb)) }
+} catch (e: Exception) {
+    null
+}
+
+/** Extrai a cor de destaque de uma imagem de tema embutida em assets/. */
+private suspend fun accentFromAsset(context: android.content.Context, assetPath: String): Color? =
+    withContext(Dispatchers.IO) {
+        try {
+            context.assets.open(assetPath).use { input ->
+                BitmapFactory.decodeStream(input)?.let { extractAccentFromBitmap(it) }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+/** Extrai a cor de destaque de uma imagem já salva no armazenamento interno (foto da galeria). */
+private suspend fun accentFromUri(context: android.content.Context, uriString: String): Color? =
+    withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.openInputStream(Uri.parse(uriString))?.use { input ->
+                BitmapFactory.decodeStream(input)?.let { extractAccentFromBitmap(it) }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+/**
+ * Pra temas de gradiente (sem nenhuma imagem por trás), não há bitmap pra
+ * rodar a Palette API — em vez disso, escolhe a cor mais saturada/viva
+ * dentre as paradas do gradiente, que costuma ser a que melhor representa
+ * o "clima" do tema como cor de destaque.
+ */
+private fun accentFromGradient(theme: com.harmonic.player.data.GradientTheme): Color {
+    val hsv = FloatArray(3)
+    val mostVivid = theme.colorsArgb.maxByOrNull { argb ->
+        android.graphics.Color.colorToHSV(argb.toInt(), hsv)
+        hsv[1] // saturação: 0 (cinza) a 1 (bem viva)
+    } ?: theme.colorsArgb.first()
+    return adjustAccentForReadability(Color(mostVivid))
 }
 
 /**

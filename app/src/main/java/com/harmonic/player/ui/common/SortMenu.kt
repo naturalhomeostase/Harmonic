@@ -5,7 +5,6 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Sort
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -41,7 +40,7 @@ fun SortMenuButton(
         Icon(Icons.Filled.Sort, contentDescription = "Ordenar por", tint = Color.White.copy(alpha = 0.85f))
     }
 
-    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+    ThemedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
         options.forEach { option ->
             DropdownMenuItem(
                 text = { Text(option.label) },
