@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.AlbumArtLoader
 import com.harmonic.player.data.SongDao
 import com.harmonic.player.playback.PlayerController
+import com.harmonic.player.ui.theme.withSingleAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -41,6 +42,7 @@ import kotlinx.coroutines.withContext
 fun NowPlayingScreen(
     playerController: PlayerController,
     dao: SongDao,
+    settings: com.harmonic.player.data.SettingsRepository,
     onBack: () -> Unit,
     onOpenEqualizer: () -> Unit
 ) {
@@ -51,7 +53,8 @@ fun NowPlayingScreen(
     var isUserSeeking by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
-    var showBookmarksSheet by remember { mutableStateOf(false) }
+    var selectedLyricIndex by remember { mutableStateOf<Int?>(null) }
+    val coverDisplayMode by settings.coverDisplayMode.collectAsState(initial = "VINYL")
     var lyricsResult by remember { mutableStateOf<com.harmonic.player.data.LyricsResult>(com.harmonic.player.data.LyricsResult.NotFound) }
 
     // Bitmap da capa da música atual — usado em três lugares: fundo desfocado,
@@ -90,7 +93,7 @@ fun NowPlayingScreen(
         val song = state.currentSong
         lyricsResult = if (song != null) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                com.harmonic.player.data.LyricsRepository.loadLyrics(song)
+                com.harmonic.player.data.LyricsRepository.load(context, song)
             }
         } else {
             com.harmonic.player.data.LyricsResult.NotFound
@@ -136,7 +139,7 @@ fun NowPlayingScreen(
         // ícones ativos...) passa a vir da própria capa em vez da cor de
         // destaque fixa do app — só aqui, o resto do app continua igual.
         MaterialTheme(
-            colorScheme = MaterialTheme.colorScheme.copy(primary = pageAccent),
+            colorScheme = MaterialTheme.colorScheme.withSingleAccent(pageAccent),
             typography = MaterialTheme.typography
         ) {
     Scaffold(
@@ -150,12 +153,60 @@ fun NowPlayingScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        val next = when (coverDisplayMode) {
+                            "VINYL" -> "STATIC"
+                            "STATIC" -> "FULLSCREEN"
+                            else -> "VINYL"
+                        }
+                        scope.launch { settings.setCoverDisplayMode(next) }
+                    }) {
+                        Icon(
+                            when (coverDisplayMode) {
+                                "STATIC" -> Icons.Filled.CropSquare
+                                "FULLSCREEN" -> Icons.Filled.Fullscreen
+                                else -> Icons.Filled.Album
+                            },
+                            contentDescription = "Modo de exibição da capa",
+                            tint = Color.White.copy(alpha = 0.85f)
+                        )
+                    }
                     IconButton(onClick = { showLyrics = !showLyrics }) {
                         Icon(
                             Icons.Filled.Subject,
                             contentDescription = if (showLyrics) "Mostrar capa" else "Mostrar letra",
                             tint = if (showLyrics) pageAccent else Color.White.copy(alpha = 0.85f)
                         )
+                    }
+                    if (showLyrics && lyricsResult is com.harmonic.player.data.LyricsResult.Synced) {
+                        IconButton(onClick = {
+                            val song = state.currentSong
+                            val lines = (lyricsResult as com.harmonic.player.data.LyricsResult.Synced).lines
+                            val currentIdx = lines.indexOfLast { it.timestampMs <= sliderPosition.toLong() }.coerceAtLeast(0)
+                            val lineText = selectedLyricIndex?.let { lines.getOrNull(it)?.text }
+                                ?: lines.getOrNull(currentIdx)?.text
+                            if (song != null && !lineText.isNullOrBlank()) {
+                                scope.launch {
+                                    val uri = LyricShareImage.generate(
+                                        context = context,
+                                        albumArt = albumBitmap,
+                                        lyricText = lineText,
+                                        songTitle = song.title,
+                                        artist = song.artist
+                                    )
+                                    if (uri != null) {
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "image/png"
+                                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(android.content.Intent.createChooser(intent, "Compartilhar letra"))
+                                    }
+                                }
+                            }
+                        }) {
+                            Icon(Icons.Filled.Share, contentDescription = "Compartilhar letra", tint = Color.White.copy(alpha = 0.85f))
+                        }
                     }
                     IconButton(onClick = { showSleepTimerDialog = true }) {
                         Icon(
@@ -187,18 +238,36 @@ fun NowPlayingScreen(
                 LyricsView(
                     lyrics = lyricsResult,
                     positionMs = sliderPosition.toLong(),
+                    selectedIndex = selectedLyricIndex,
+                    onLineClick = { index, _ -> selectedLyricIndex = if (selectedLyricIndex == index) null else index },
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                 )
             } else {
-                VinylRecord(
-                    bitmap = albumBitmap,
-                    isPlaying = state.isPlaying,
-                    modifier = Modifier
-                        .fillMaxWidth(0.86f)
-                        .aspectRatio(1f)
-                )
+                when (coverDisplayMode) {
+                    "STATIC" -> com.harmonic.player.ui.common.AlbumArt(
+                        song = state.currentSong,
+                        modifier = Modifier
+                            .fillMaxWidth(0.86f)
+                            .aspectRatio(1f)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                    )
+                    "FULLSCREEN" -> com.harmonic.player.ui.common.AlbumArt(
+                        song = state.currentSong,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                    )
+                    else -> VinylRecord(
+                        bitmap = albumBitmap,
+                        isPlaying = state.isPlaying,
+                        modifier = Modifier
+                            .fillMaxWidth(0.86f)
+                            .aspectRatio(1f)
+                    )
+                }
             }
 
             Spacer(Modifier.height(24.dp))
@@ -259,11 +328,19 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { playerController.setShuffle(!state.shuffleEnabled) }) {
+                val repeatModeIsOne = state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE
+                IconButton(
+                    onClick = { playerController.setShuffle(!state.shuffleEnabled) },
+                    enabled = !repeatModeIsOne
+                ) {
                     Icon(
                         Icons.Filled.Shuffle,
                         contentDescription = "Aleatório",
-                        tint = if (state.shuffleEnabled) pageAccent else Color.White.copy(alpha = 0.85f)
+                        tint = when {
+                            repeatModeIsOne -> Color.White.copy(alpha = 0.25f)
+                            state.shuffleEnabled -> pageAccent
+                            else -> Color.White.copy(alpha = 0.85f)
+                        }
                     )
                 }
                 IconButton(onClick = { playerController.skipPrevious() }) {
@@ -298,9 +375,10 @@ fun NowPlayingScreen(
                 }
                 IconButton(onClick = { playerController.cycleRepeatMode() }) {
                     Icon(
-                        Icons.Filled.Repeat,
+                        if (repeatModeIsOne) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
                         contentDescription = "Repetir",
-                        tint = Color.White.copy(alpha = 0.85f)
+                        tint = if (state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) pageAccent
+                               else Color.White.copy(alpha = 0.85f)
                     )
                 }
             }
@@ -308,50 +386,16 @@ fun NowPlayingScreen(
             Spacer(Modifier.height(4.dp))
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = { playerController.setPointA() }) {
-                    Text(
-                        "A" + if (state.pointA != null) " ✓" else "",
-                        color = if (state.pointA != null) pageAccent else Color.White.copy(alpha = 0.85f)
-                    )
-                }
-                TextButton(
-                    onClick = { playerController.setPointB() },
-                    enabled = state.pointA != null
-                ) {
-                    Text(
-                        "B" + if (state.pointB != null) " ✓" else "",
-                        color = if (state.pointB != null) pageAccent else Color.White.copy(alpha = 0.85f)
-                    )
-                }
-                if (state.pointA != null || state.pointB != null) {
-                    IconButton(onClick = { playerController.clearABRepeat() }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Limpar A-B", tint = Color.White.copy(alpha = 0.85f))
-                    }
-                }
-
-                Spacer(Modifier.width(16.dp))
-
-                IconButton(onClick = {
-                    val song = state.currentSong ?: return@IconButton
-                    scope.launch {
-                        dao.insertBookmark(
-                            com.harmonic.player.data.Bookmark(
-                                songId = song.id,
-                                positionMs = playerController.currentPositionMs(),
-                                label = formatDuration(playerController.currentPositionMs())
-                            )
-                        )
-                    }
-                }) {
-                    Icon(Icons.Filled.BookmarkAdd, contentDescription = "Adicionar marcador", tint = Color.White.copy(alpha = 0.85f))
-                }
-                IconButton(onClick = { showBookmarksSheet = true }) {
-                    Icon(Icons.Filled.Bookmarks, contentDescription = "Ver marcadores", tint = Color.White.copy(alpha = 0.85f))
-                }
+                SeekChip(label = "-60s", onClick = { playerController.seekBy(-60_000) })
+                SeekChip(label = "-30s", onClick = { playerController.seekBy(-30_000) })
+                SeekChip(label = "-10s", onClick = { playerController.seekBy(-10_000) })
+                SeekChip(label = "+10s", onClick = { playerController.seekBy(10_000) })
+                SeekChip(label = "+30s", onClick = { playerController.seekBy(30_000) })
+                SeekChip(label = "+60s", onClick = { playerController.seekBy(60_000) })
             }
         }
     }
@@ -373,18 +417,6 @@ fun NowPlayingScreen(
             onCancel = {
                 playerController.cancelSleepTimer()
                 showSleepTimerDialog = false
-            }
-        )
-    }
-
-    if (showBookmarksSheet && state.currentSong != null) {
-        BookmarksSheet(
-            song = state.currentSong!!,
-            dao = dao,
-            onDismiss = { showBookmarksSheet = false },
-            onSeekTo = { positionMs ->
-                playerController.seekTo(positionMs)
-                showBookmarksSheet = false
             }
         )
     }
@@ -489,51 +521,6 @@ private fun VinylRecord(
 }
 
 @Composable
-private fun BookmarksSheet(
-    song: com.harmonic.player.data.Song,
-    dao: SongDao,
-    onDismiss: () -> Unit,
-    onSeekTo: (Long) -> Unit
-) {
-    val scope = rememberCoroutineScope()
-    val bookmarks by dao.getBookmarksForSong(song.id).collectAsState(initial = emptyList())
-
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.padding(bottom = 24.dp)) {
-            Text(
-                "Marcadores — ${song.title}",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-            Spacer(Modifier.height(8.dp))
-            if (bookmarks.isEmpty()) {
-                Text(
-                    "Nenhum marcador salvo ainda. Toque no ícone de marcador\n" +
-                    "durante a reprodução pra guardar o instante atual.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp)
-                )
-            } else {
-                bookmarks.forEach { bookmark ->
-                    ListItem(
-                        headlineContent = { Text(bookmark.label) },
-                        leadingContent = { Icon(Icons.Filled.Bookmark, contentDescription = null) },
-                        trailingContent = {
-                            IconButton(onClick = { scope.launch { dao.deleteBookmark(bookmark.id) } }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Remover marcador")
-                            }
-                        },
-                        modifier = Modifier.clickable { onSeekTo(bookmark.positionMs) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SleepTimerDialog(
     currentEndAt: Long?,
     onDismiss: () -> Unit,
@@ -576,6 +563,19 @@ private fun SleepTimerDialog(
 }
 
 /** Formata milissegundos como "m:ss", ex: 1234000ms -> "20:34". */
+@Composable
+private fun SeekChip(label: String, onClick: () -> Unit) {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .background(Color.White.copy(alpha = 0.08f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.85f))
+    }
+}
+
 private fun formatDuration(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0)
     val minutes = totalSeconds / 60

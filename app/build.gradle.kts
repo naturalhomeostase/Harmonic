@@ -12,15 +12,51 @@ android {
         applicationId = "com.harmonic.player"
         minSdk = 26 // Android 8.0 — cobre praticamente todos os aparelhos em uso
         targetSdk = 34
-        versionCode = 1
+        // Sobe sozinho a cada build do GitHub Actions (usa o número da
+        // execução do workflow); em builds locais, sempre 1. Isso evita
+        // precisar lembrar de subir esse número manualmente toda hora.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "0.1.0-mvp"
 
         vectorDrawables.useSupportLibrary = true
     }
 
+    // Chaves de assinatura FIXAS, commitadas no repositório (pasta
+    // /keystore) — o motivo de ter que "desinstalar a versão antiga" a
+    // cada teste era esse: sem uma chave fixa, cada máquina/execução do
+    // GitHub Actions gerava sua própria chave de debug do zero, e o
+    // Android bloqueia atualizar um app quando a assinatura muda.
+    //
+    // ATENÇÃO: a chave de release aqui é só pra testes/instalação própria
+    // — funciona perfeitamente pra gerar APK/AAB e instalar no celular,
+    // mas antes de publicar de verdade na Play Store algum dia, gere uma
+    // chave de release privada de verdade e NÃO a commite no repositório
+    // (principalmente se ele for público).
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+        create("release") {
+            storeFile = file("../keystore/release.keystore")
+            storePassword = "musicbox123"
+            keyAlias = "musicbox"
+            keyPassword = "musicbox123"
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = true
+            // Minificação desligada por enquanto: o app usa Room, Media3,
+            // Glance e uma lib de tags de áudio (jaudiotagger) que dependem
+            // bastante de reflexão — ligar o R8 sem regras de "keep" bem
+            // testadas é um jeito clássico de introduzir crash só na build
+            // de release. Deixei documentado abaixo pra quando quiser
+            // reativar com calma.
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
@@ -92,6 +128,10 @@ dependencies {
 
     // Palette — extrair cor dominante da capa do álbum
     implementation("androidx.palette:palette-ktx:1.0.0")
+
+    // Edição de tags reais (ID3/Vorbis/MP4...) direto no arquivo — fork do
+    // jaudiotagger sem dependências de java.awt, feito pra Android.
+    implementation("com.github.Adonai:jaudiotagger:2.3.15")
 
     // Coil — carregar capas de álbum/imagens de fundo
     implementation("io.coil-kt:coil-compose:2.6.0")

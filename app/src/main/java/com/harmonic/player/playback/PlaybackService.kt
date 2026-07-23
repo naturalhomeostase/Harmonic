@@ -2,17 +2,24 @@ package com.harmonic.player.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.glance.appwidget.updateAll
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.harmonic.player.HarmonicApp
 import com.harmonic.player.MainActivity
+import com.harmonic.player.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -167,8 +174,50 @@ class PlaybackService : MediaSessionService() {
  * Callback da sessão — ponto de extensão para fila persistente customizada
  * no futuro (ex: onPlaybackResumption). Por enquanto usa o comportamento
  * padrão do Media3, que já cobre play/pause/próxima/anterior/seek/shuffle/repeat.
+ *
+ * Também adiciona um botão "Parar" (STOP) na notificação — diferente do
+ * pause, ele encerra a reprodução de vez (limpa a fila), pra quem quer
+ * fechar a música rapidinho sem precisar abrir o app.
  */
+private const val ACTION_STOP = "com.harmonic.player.STOP"
+
 private class PlaybackSessionCallback : MediaSession.Callback {
-    // Sobrescreveremos onAddMediaItems/onPlaybackResumption aqui numa
-    // próxima fase, se precisarmos customizar o comportamento padrão.
+
+    private val stopSessionCommand = SessionCommand(ACTION_STOP, Bundle.EMPTY)
+
+    private val stopButton = CommandButton.Builder()
+        .setDisplayName("Parar")
+        .setSessionCommand(stopSessionCommand)
+        .setIconResId(R.drawable.ic_stop)
+        .build()
+
+    override fun onConnect(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo
+    ): MediaSession.ConnectionResult {
+        val availableCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+            .buildUpon()
+            .add(stopSessionCommand)
+            .build()
+        return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+            .setAvailableSessionCommands(availableCommands)
+            .build()
+    }
+
+    override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
+        session.setCustomLayout(listOf(stopButton))
+    }
+
+    override fun onCustomCommand(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        customCommand: SessionCommand,
+        args: Bundle
+    ): ListenableFuture<SessionResult> {
+        if (customCommand.customAction == ACTION_STOP) {
+            session.player.stop()
+            session.player.clearMediaItems()
+        }
+        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+    }
 }

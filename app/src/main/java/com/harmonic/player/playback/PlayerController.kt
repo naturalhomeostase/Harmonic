@@ -35,7 +35,22 @@ data class PlaybackUiState(
     val sleepTimerRemainingMs: Long = 0,
     // A-B Repeat: repete só o trecho entre os dois pontos, em loop
     val pointA: Long? = null,
-    val pointB: Long? = null
+    val pointB: Long? = null,
+    /**
+     * Identifica de "onde" a fila atual veio (ex: "playlist:5", "album:12",
+     * "artist:Xis", "library") — usado só pra saber se um novo play() está
+     * trocando de contexto (pra decidir se avisa antes de resetar
+     * shuffle/repeat) ou é só continuar navegando dentro do mesmo lugar.
+     */
+    val sourceKey: String? = null
+)
+
+/** Um play() que está esperando confirmação do usuário porque trocaria de contexto com shuffle/repeat ativos. */
+data class PendingPlayRequest(
+    val songs: List<Song>,
+    val startIndex: Int,
+    val sourceKey: String,
+    val sourceLabel: String
 )
 
 /**
@@ -57,6 +72,9 @@ class PlayerController(
 
     private val _uiState = MutableStateFlow(PlaybackUiState())
     val uiState: StateFlow<PlaybackUiState> = _uiState.asStateFlow()
+
+    private val _pendingPlayRequest = MutableStateFlow<PendingPlayRequest?>(null)
+    val pendingPlayRequest: StateFlow<PendingPlayRequest?> = _pendingPlayRequest.asStateFlow()
 
     fun connect(onConnected: () -> Unit = {}) {
         val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
@@ -141,19 +159,55 @@ class PlayerController(
         }
     }
 
-    fun playQueue(songs: List<Song>, startIndex: Int) {
+    fun playQueue(songs: List<Song>, startIndex: Int, sourceKey: String = "default") {
         val items = songs.map { it.toMediaItem() }
         _uiState.value = _uiState.value.copy(
             queue = songs,
             currentSong = songs.getOrNull(startIndex),
             currentIndex = startIndex,
-            isPlaying = true // otimista: evita o ícone de play "atrasado" até o callback confirmar
+            isPlaying = true, // otimista: evita o ícone de play "atrasado" até o callback confirmar
+            sourceKey = sourceKey
         )
         val startPositionMs = songs.getOrNull(startIndex)?.trimStartMs?.takeIf { it > 0 } ?: 0L
         controller?.setMediaItems(items, startIndex, startPositionMs)
         controller?.prepare()
         controller?.play()
         persistQueueSnapshot()
+    }
+
+    /**
+     * Mesmo que [playQueue], mas verifica antes se isso trocaria de
+     * contexto (ex: estava numa playlist com shuffle ligado, e agora vai
+     * tocar um álbum) — nesse caso, guarda o pedido em [pendingPlayRequest]
+     * em vez de tocar na hora, pra tela mostrar um aviso e o usuário
+     * confirmar (ou cancelar) antes de perder o shuffle/repeat anterior.
+     * Quando não há conflito real (mesmo contexto, ou nada tocando ainda,
+     * ou shuffle/repeat já desligados), toca direto sem perguntar nada.
+     */
+    fun requestPlayQueue(songs: List<Song>, startIndex: Int, sourceKey: String, sourceLabel: String) {
+        val state = _uiState.value
+        val hasActiveModifiers = state.shuffleEnabled || state.repeatMode != Player.REPEAT_MODE_OFF
+        val isDifferentContext = state.sourceKey != null && state.sourceKey != sourceKey && state.queue.isNotEmpty()
+        if (hasActiveModifiers && isDifferentContext) {
+            _pendingPlayRequest.value = PendingPlayRequest(songs, startIndex, sourceKey, sourceLabel)
+        } else {
+            playQueue(songs, startIndex, sourceKey)
+        }
+    }
+
+    fun confirmPendingPlay() {
+        val request = _pendingPlayRequest.value ?: return
+        // Reseta shuffle/repeat do contexto anterior — o novo play() já
+        // começa "do zero", na ordem padrão de onde o usuário está agora.
+        controller?.shuffleModeEnabled = false
+        controller?.repeatMode = Player.REPEAT_MODE_OFF
+        _uiState.value = _uiState.value.copy(shuffleEnabled = false, repeatMode = Player.REPEAT_MODE_OFF)
+        playQueue(request.songs, request.startIndex, request.sourceKey)
+        _pendingPlayRequest.value = null
+    }
+
+    fun cancelPendingPlay() {
+        _pendingPlayRequest.value = null
     }
 
     fun playNext(song: Song) {
@@ -185,7 +239,18 @@ class PlayerController(
     fun skipPrevious() = controller?.seekToPreviousMediaItem()
     fun seekTo(positionMs: Long) = controller?.seekTo(positionMs)
 
+    /** Avança ou volta um intervalo (ex: -10000 = volta 10s), sem passar dos limites da música. */
+    fun seekBy(deltaMs: Long) {
+        val player = controller ?: return
+        val target = (player.currentPosition + deltaMs).coerceIn(0, player.duration.coerceAtLeast(0))
+        player.seekTo(target)
+    }
+
     fun setShuffle(enabled: Boolean) {
+        // Não deixa ligar o shuffle enquanto "repetir uma música" está
+        // ativo — nesse modo só existe uma música na "rotação", então
+        // embaralhar não teria efeito nenhum e só confundiria.
+        if (enabled && controller?.repeatMode == Player.REPEAT_MODE_ONE) return
         controller?.shuffleModeEnabled = enabled
         _uiState.value = _uiState.value.copy(shuffleEnabled = enabled)
     }
@@ -198,6 +263,15 @@ class PlayerController(
         }
         controller?.repeatMode = next
         _uiState.value = _uiState.value.copy(repeatMode = next)
+
+        // Repetir só UMA música e embaralhar ao mesmo tempo não faz
+        // sentido (embaralhar o quê, se é sempre a mesma?) — desliga o
+        // shuffle automaticamente nesse caso específico. Repetir a fila
+        // TODA continua funcionando junto com o shuffle normalmente.
+        if (next == Player.REPEAT_MODE_ONE && controller?.shuffleModeEnabled == true) {
+            controller?.shuffleModeEnabled = false
+            _uiState.value = _uiState.value.copy(shuffleEnabled = false)
+        }
     }
 
     fun currentPositionMs(): Long = controller?.currentPosition ?: 0

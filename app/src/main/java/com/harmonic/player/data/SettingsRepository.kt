@@ -55,6 +55,8 @@ class SettingsRepository(private val context: Context) {
         val TITLE_GRADIENT_COLOR_END = intPreferencesKey("title_gradient_color_end")
         val ALBUM_GRID_VIEW = booleanPreferencesKey("album_grid_view")
         val ARTIST_GRID_VIEW = booleanPreferencesKey("artist_grid_view")
+        val HIDDEN_TABS = stringSetPreferencesKey("hidden_tabs")
+        val COVER_DISPLAY_MODE = stringPreferencesKey("cover_display_mode")
         val THEME_MODE = stringPreferencesKey("theme_mode") // "light" | "dark" | "amoled" | "system"
         val IGNORED_FOLDERS = stringSetPreferencesKey("ignored_folders")
         val CROSSFADE_MS = intPreferencesKey("crossfade_ms")
@@ -96,6 +98,10 @@ class SettingsRepository(private val context: Context) {
     val titleGradientColorEnd: Flow<Int?> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_COLOR_END] }
     val albumGridView: Flow<Boolean> = context.dataStore.data.map { it[Keys.ALBUM_GRID_VIEW] ?: false }
     val artistGridView: Flow<Boolean> = context.dataStore.data.map { it[Keys.ARTIST_GRID_VIEW] ?: false }
+    /** Nomes das LibraryTab (enum) que o usuário escondeu da barra de abas. */
+    val hiddenTabs: Flow<Set<String>> = context.dataStore.data.map { it[Keys.HIDDEN_TABS] ?: emptySet() }
+    /** "VINYL" | "STATIC" | "FULLSCREEN" — como a capa aparece na tela Agora Tocando. */
+    val coverDisplayMode: Flow<String> = context.dataStore.data.map { it[Keys.COVER_DISPLAY_MODE] ?: "VINYL" }
     // Padrão "dark", não "system": o app sempre mostra uma imagem de fundo
     // com véu escuro por cima, então texto escuro (o que aconteceria no
     // tema claro do sistema) fica ilegível. Continua possível escolher
@@ -174,6 +180,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setArtistGridView(enabled: Boolean) {
         context.dataStore.edit { it[Keys.ARTIST_GRID_VIEW] = enabled }
+    }
+
+    suspend fun setTabHidden(tabName: String, hidden: Boolean) {
+        context.dataStore.edit { prefs ->
+            val current = (prefs[Keys.HIDDEN_TABS] ?: emptySet()).toMutableSet()
+            if (hidden) current.add(tabName) else current.remove(tabName)
+            prefs[Keys.HIDDEN_TABS] = current
+        }
+    }
+
+    suspend fun setCoverDisplayMode(mode: String) {
+        context.dataStore.edit { it[Keys.COVER_DISPLAY_MODE] = mode }
     }
 
     suspend fun setThemeMode(mode: String) {

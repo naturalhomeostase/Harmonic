@@ -6,21 +6,22 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.harmonic.player.data.MusicRepository
 import com.harmonic.player.data.SettingsRepository
+import com.harmonic.player.ui.library.LibraryTab
 import kotlinx.coroutines.launch
 
 /**
@@ -32,6 +33,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     settings: SettingsRepository,
+    musicRepository: MusicRepository,
     onBack: () -> Unit,
     onOpenTheme: () -> Unit,
     onOpenHiddenFolders: () -> Unit
@@ -39,6 +41,9 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val albumGridView by settings.albumGridView.collectAsState(initial = false)
     val artistGridView by settings.artistGridView.collectAsState(initial = false)
+    val hiddenTabs by settings.hiddenTabs.collectAsState(initial = emptySet())
+    var showTabsDialog by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -47,7 +52,7 @@ fun SettingsScreen(
                 title = { Text("Configurações") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -94,7 +99,71 @@ fun SettingsScreen(
                 subtitle = "Escolha quais pastas ficam de fora da biblioteca",
                 onClick = onOpenHiddenFolders
             )
+
+            SettingsRow(
+                icon = Icons.Filled.Checklist,
+                title = "Abas visíveis",
+                subtitle = "Escolha quais abas aparecem na tela principal",
+                onClick = { showTabsDialog = true }
+            )
+
+            SettingsRow(
+                icon = Icons.Filled.Sync,
+                title = if (scanning) "Escaneando..." else "Escanear novas músicas",
+                subtitle = "Procura por músicas baixadas recentemente que ainda não apareceram no app",
+                onClick = {
+                    if (!scanning) {
+                        scanning = true
+                        musicRepository.rescanNow(scope)
+                        // Feedback simples: a varredura roda em segundo
+                        // plano, então só mostramos "escaneando" por um
+                        // tempinho — não temos um sinal exato de "terminou"
+                        // exposto aqui sem mudar mais a fundo o repositório.
+                        scope.launch {
+                            kotlinx.coroutines.delay(2500)
+                            scanning = false
+                        }
+                    }
+                }
+            )
         }
+    }
+
+    if (showTabsDialog) {
+        AlertDialog(
+            onDismissRequest = { showTabsDialog = false },
+            title = { Text("Abas visíveis") },
+            text = {
+                Column {
+                    Text(
+                        "Músicas não pode ser escondida.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LibraryTab.values().filter { it != LibraryTab.SONGS }.forEach { tab ->
+                        val isHidden = hiddenTabs.contains(tab.name)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { scope.launch { settings.setTabHidden(tab.name, !isHidden) } }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(tab.label)
+                            Switch(
+                                checked = !isHidden,
+                                onCheckedChange = { visible -> scope.launch { settings.setTabHidden(tab.name, !visible) } }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTabsDialog = false }) { Text("Fechar") }
+            }
+        )
     }
 }
 

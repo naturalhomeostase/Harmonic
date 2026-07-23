@@ -8,11 +8,13 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.core.view.WindowCompat
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -97,6 +99,13 @@ class MainActivity : ComponentActivity() {
 
         pendingExternalAudioUri = extractAudioUri(intent)
 
+        // Tela cheia de verdade: o conteúdo do app passa a se estender por
+        // baixo da barra de status/navegação (que já são transparentes no
+        // tema), em vez de deixar aquela faixa escura padrão do sistema no
+        // topo. A cor dos ÍCONES da barra (claros/escuros) é ajustada logo
+        // abaixo, dinamicamente, de acordo com o tema atual do app.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
         setContent {
             val accentColorArgb by app.settings.accentColor.collectAsState(initial = null)
             val themeModeStr by app.settings.themeMode.collectAsState(initial = "dark")
@@ -109,6 +118,22 @@ class MainActivity : ComponentActivity() {
             }
             val customAccent = accentColorArgb?.let { Color(it) }
             val scope = rememberCoroutineScope()
+
+            // Ícones da barra de status/navegação: escuros sobre fundo
+            // claro (tema Light) ou claros sobre fundo escuro (Dark/AMOLED
+            // /Sistema-escuro) — assim ela sempre acompanha o tema em vez
+            // de ficar fixa numa cor só.
+            val systemInDarkTheme = isSystemInDarkTheme()
+            val useLightStatusBarIcons = when (themeMode) {
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK, ThemeMode.AMOLED -> true
+                ThemeMode.SYSTEM -> systemInDarkTheme
+            }
+            SideEffect {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.isAppearanceLightStatusBars = !useLightStatusBarIcons
+                controller.isAppearanceLightNavigationBars = !useLightStatusBarIcons
+            }
 
             HarmonicTheme(themeMode = themeMode, customAccentColor = customAccent) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
@@ -172,6 +197,7 @@ class MainActivity : ComponentActivity() {
 
                         if (audioPermissionGranted) {
                             HarmonicNavHost(playerController, app)
+                            com.harmonic.player.ui.common.PlaybackContextConfirmDialog(playerController)
                         } else {
                             com.harmonic.player.ui.common.PermissionRationaleScreen(
                                 onRequestPermission = { permissionsState.launchMultiplePermissionRequest() }
@@ -236,16 +262,20 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
                 database = app.database,
                 playerController = playerController,
                 settings = app.settings,
-                onSongClick = { queue, index -> playerController.playQueue(queue, index) },
+                onSongClick = { queue, index, sourceKey ->
+                    val label = sourceKey.substringAfter(':').ifBlank { "essa lista" }
+                    playerController.requestPlayQueue(queue, index, sourceKey, label)
+                },
                 onOpenNowPlaying = { navController.navigate("now_playing") },
                 onOpenSettings = { navController.navigate("settings") },
-                onOpenPlaylists = { navController.navigate("playlists") }
+                onOpenPlaylist = { id -> navController.navigate("playlist/$id") }
             )
         }
         composable("now_playing") {
             NowPlayingScreen(
                 playerController = playerController,
                 dao = app.database.songDao(),
+                settings = app.settings,
                 onBack = { navController.popBackStack() },
                 onOpenEqualizer = { navController.navigate("equalizer") }
             )
@@ -253,6 +283,7 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
         composable("settings") {
             com.harmonic.player.ui.settings.SettingsScreen(
                 settings = app.settings,
+                musicRepository = app.musicRepository,
                 onBack = { navController.popBackStack() },
                 onOpenTheme = { navController.navigate("appearance") },
                 onOpenHiddenFolders = { navController.navigate("hidden_folders") }
@@ -293,8 +324,9 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
                 playlistId = playlistId,
                 dao = app.database.songDao(),
                 context = app.applicationContext,
+                playerController = playerController,
                 onBack = { navController.popBackStack() },
-                onPlaySongs = { songs, index -> playerController.playQueue(songs, index); navController.navigate("now_playing") }
+                onOpenNowPlaying = { navController.navigate("now_playing") }
             )
         }
     }

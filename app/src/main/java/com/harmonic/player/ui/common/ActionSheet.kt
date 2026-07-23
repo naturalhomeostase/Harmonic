@@ -1,15 +1,18 @@
 package com.harmonic.player.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -17,7 +20,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -70,57 +72,54 @@ fun ActionSheet(
         containerColor = Color.Transparent,
         contentColor = Color.White,
         dragHandle = null,
-        // Deixa uma folga em volta pro cartão de vidro "flutuar" solto em
-        // vez de encostar nas bordas da tela como um bottom sheet comum.
         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(28.dp))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = 0.14f), Color.White.copy(alpha = 0.05f))
-                    )
-                )
-                .background(Color.Black.copy(alpha = 0.35f)) // reforça o contraste sobre fundos muito claros
-                .padding(bottom = 20.dp)
+                .clip(RoundedCornerShape(20.dp))
+                // Bem mais opaco que a versão anterior — antes o fundo
+                // "vidro" deixava o conteúdo por trás se misturar com o
+                // texto do menu; agora lê como um cartão sólido de verdade,
+                // só um pouco translúcido pra ainda parecer "flutuando".
+                .background(Color(0xFF161616).copy(alpha = 0.96f))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                .padding(vertical = 6.dp)
         ) {
-            Column(
+            androidx.compose.foundation.layout.Box(
                 modifier = Modifier
-                    .padding(top = 10.dp)
-            ) {
-                // Alcinha de arrasto própria, já que dragHandle = null acima
-                Column(modifier = Modifier.padding(bottom = 4.dp)) {
-                    androidx.compose.foundation.layout.Box(
-                        modifier = Modifier
-                            .align(androidx.compose.ui.Alignment.CenterHorizontally)
-                            .padding(vertical = 8.dp)
-                            .size(width = 36.dp, height = 4.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(Color.White.copy(alpha = 0.35f))
-                    )
-                }
-                if (title != null) {
-                    Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)) {
-                        Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White)
-                        if (subtitle != null) {
-                            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f))
-                        }
+                    .align(androidx.compose.ui.Alignment.CenterHorizontally)
+                    .padding(top = 8.dp, bottom = 2.dp)
+                    .size(width = 32.dp, height = 3.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.25f))
+            )
+            if (title != null) {
+                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
+                    if (subtitle != null) {
+                        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.55f), maxLines = 1)
                     }
                 }
-                items.forEach { item ->
-                    ListItem(
-                        modifier = Modifier.clickable { item.onClick() },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        leadingContent = {
-                            Icon(item.icon, contentDescription = null, tint = item.tint ?: Color.White.copy(alpha = 0.85f))
-                        },
-                        headlineContent = {
-                            Text(item.label, color = item.tint ?: Color.White)
-                        }
+            }
+            items.forEach { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { item.onClick() }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Icon(
+                        item.icon,
+                        contentDescription = null,
+                        tint = item.tint ?: Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(20.dp)
                     )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(item.label, color = item.tint ?: Color.White, style = MaterialTheme.typography.bodyMedium)
                 }
             }
+            Spacer(Modifier.height(4.dp))
         }
     }
 }

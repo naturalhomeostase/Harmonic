@@ -31,25 +31,25 @@ interface SongDao {
     """)
     fun getArtistSummaries(): Flow<List<ArtistSummary>>
 
-    @Query("SELECT * FROM songs WHERE artist = :artist LIMIT 1")
+    @Query("SELECT * FROM songs WHERE artist = :artist AND isHidden = 0 LIMIT 1")
     suspend fun getFirstSongForArtist(artist: String): Song?
 
-    @Query("SELECT * FROM songs WHERE artist = :artist ORDER BY album, trackNumber")
+    @Query("SELECT * FROM songs WHERE artist = :artist AND folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY album, trackNumber")
     fun getSongsByArtist(artist: String): Flow<List<Song>>
 
-    @Query("SELECT DISTINCT album, albumId FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY album COLLATE NOCASE ASC")
+    @Query("SELECT album, albumId, artist, COUNT(*) AS trackCount FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 GROUP BY albumId ORDER BY album COLLATE NOCASE ASC")
     fun getAlbums(): Flow<List<AlbumSummary>>
 
-    @Query("SELECT * FROM songs WHERE albumId = :albumId ORDER BY trackNumber")
+    @Query("SELECT * FROM songs WHERE albumId = :albumId AND folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY trackNumber")
     fun getSongsByAlbum(albumId: Long): Flow<List<Song>>
 
-    @Query("SELECT * FROM songs WHERE albumId = :albumId LIMIT 1")
+    @Query("SELECT * FROM songs WHERE albumId = :albumId AND isHidden = 0 LIMIT 1")
     suspend fun getFirstSongForAlbum(albumId: Long): Song?
 
     @Query("SELECT DISTINCT genre FROM songs WHERE genre IS NOT NULL AND folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY genre ASC")
     fun getGenres(): Flow<List<String>>
 
-    @Query("SELECT * FROM songs WHERE genre = :genre ORDER BY title")
+    @Query("SELECT * FROM songs WHERE genre = :genre AND folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY title")
     fun getSongsByGenre(genre: String): Flow<List<Song>>
 
     @Query("SELECT DISTINCT folder FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY folder ASC")
@@ -59,7 +59,7 @@ interface SongDao {
     @Query("SELECT DISTINCT folder FROM songs ORDER BY folder ASC")
     fun getAllFoldersIncludingHidden(): Flow<List<String>>
 
-    @Query("SELECT * FROM songs WHERE folder = :folder ORDER BY title")
+    @Query("SELECT * FROM songs WHERE folder = :folder AND isHidden = 0 ORDER BY title")
     fun getSongsByFolder(folder: String): Flow<List<Song>>
 
     // ---------- Pastas ocultas ----------
@@ -83,6 +83,12 @@ interface SongDao {
 
     @Query("UPDATE songs SET title = :title WHERE id = :songId")
     suspend fun renameSong(songId: Long, title: String)
+
+    @Query("""
+        UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, trackNumber = :trackNumber
+        WHERE id = :songId
+    """)
+    suspend fun updateSongMetadata(songId: Long, title: String, artist: String, album: String, genre: String?, trackNumber: Int?)
 
     @Query("UPDATE songs SET customCoverUri = :uri WHERE id = :songId")
     suspend fun setCustomCover(songId: Long, uri: String?)
@@ -187,6 +193,18 @@ interface SongDao {
     @Query("UPDATE playlists SET modifiedAt = :timestamp WHERE id = :playlistId")
     suspend fun touchPlaylist(playlistId: Long, timestamp: Long = System.currentTimeMillis())
 
+    /** Regrava a posição de cada música na playlist, na ordem dada (usado depois de arrastar pra reordenar). */
+    @androidx.room.Transaction
+    suspend fun updatePlaylistOrder(playlistId: Long, songIdsInOrder: List<Long>) {
+        songIdsInOrder.forEachIndexed { index, songId ->
+            setPlaylistSongPosition(playlistId, songId, index)
+        }
+        touchPlaylist(playlistId)
+    }
+
+    @Query("UPDATE playlist_song_cross_ref SET position = :position WHERE playlistId = :playlistId AND songId = :songId")
+    suspend fun setPlaylistSongPosition(playlistId: Long, songId: Long, position: Int)
+
     @Query("UPDATE playlists SET name = :name, modifiedAt = :timestamp WHERE id = :playlistId")
     suspend fun renamePlaylist(playlistId: Long, name: String, timestamp: Long = System.currentTimeMillis())
 
@@ -202,6 +220,6 @@ interface SongDao {
     suspend fun deleteBookmark(bookmarkId: Long)
 }
 
-data class AlbumSummary(val album: String, val albumId: Long)
+data class AlbumSummary(val album: String, val albumId: Long, val artist: String, val trackCount: Int)
 
 data class ArtistSummary(val name: String, val songCount: Int, val albumCount: Int)
