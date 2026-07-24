@@ -1434,54 +1434,32 @@ private fun SongRow(
 
     ListItem(
         leadingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Ícone de menu à esquerda da linha — abre as opções dessa
-                // música (tocar em seguida, playlist, cortar, etc).
-                Box {
-                    IconButton(onClick = { showOptions = true }, modifier = Modifier.size(40.dp)) {
-                        Icon(
-                            imageVector = Icons.Filled.MoreVert,
-                            contentDescription = "Mais opções",
-                            tint = Color.White.copy(alpha = 0.75f)
-                        )
-                    }
-                    if (showOptions) {
-                        SongOptionsSheet(
-                            song = song,
-                            dao = dao,
-                            onDismiss = { showOptions = false },
-                            onPlayNext = { showOptions = false; onPlayNext() },
-                            onAddToQueueEnd = { showOptions = false; onAddToQueueEnd() }
-                        )
-                    }
-                }
-                // Tocar na capa marca/desmarca a música pra seleção múltipla
-                // (fila, favoritos ou playlist em lote) — um "check" verde
-                // some por cima da capa quando selecionada, e tocar em
-                // qualquer outra parte da linha continua tocando a música
-                // normalmente.
-                Box(contentAlignment = Alignment.Center) {
-                    com.harmonic.player.ui.common.AlbumArt(
-                        song = song,
+            // Tocar na capa marca/desmarca a música pra seleção múltipla
+            // (fila, favoritos ou playlist em lote) — um "check" verde
+            // some por cima da capa quando selecionada, e tocar em
+            // qualquer outra parte da linha continua tocando a música
+            // normalmente.
+            Box(contentAlignment = Alignment.Center) {
+                com.harmonic.player.ui.common.AlbumArt(
+                    song = song,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .clickable(onClick = onToggleSelect)
+                )
+                if (isSelected) {
+                    Box(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                            .clickable(onClick = onToggleSelect)
+                            .background(Color.Black.copy(alpha = 0.45f))
                     )
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                                .background(Color.Black.copy(alpha = 0.45f))
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = "Selecionada",
-                            tint = accentColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = "Selecionada",
+                        tint = accentColor,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
         },
@@ -1540,6 +1518,26 @@ private fun SongRow(
                         contentDescription = "Favoritar",
                         tint = if (song.isFavorite) accentColor else Color.White.copy(alpha = 0.7f)
                     )
+                }
+                // Ícone de menu à direita da linha — abre as opções dessa
+                // música (tocar em seguida, playlist, cortar, etc).
+                Box {
+                    IconButton(onClick = { showOptions = true }, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = "Mais opções",
+                            tint = Color.White.copy(alpha = 0.75f)
+                        )
+                    }
+                    if (showOptions) {
+                        SongOptionsSheet(
+                            song = song,
+                            dao = dao,
+                            onDismiss = { showOptions = false },
+                            onPlayNext = { showOptions = false; onPlayNext() },
+                            onAddToQueueEnd = { showOptions = false; onAddToQueueEnd() }
+                        )
+                    }
                 }
             }
         },

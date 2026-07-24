@@ -67,6 +67,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Tela de erro exibida quando o app trava (em vez de só fechar) -->
+        <activity
+            android:name=".CrashActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
         <!-- Serviço de reprodução: sobrevive com o app em segundo plano,
              expõe a MediaSession usada pela notificação, tela bloqueada,
              Bluetooth e Android Auto -->
