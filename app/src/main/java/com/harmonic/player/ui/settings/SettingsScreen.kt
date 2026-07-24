@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
@@ -124,6 +125,23 @@ fun SettingsScreen(
                             scanning = false
                         }
                     }
+                }
+            )
+
+            val notifContext = androidx.compose.ui.platform.LocalContext.current
+            SettingsRow(
+                icon = Icons.Filled.Notifications,
+                title = "Notificação do player",
+                subtitle = "Se os botões de play/pause não aparecerem na barra de notificação, confira aqui se a permissão está ativada",
+                onClick = {
+                    val intent = if (android.os.Build.VERSION.SDK_INT >= 26) {
+                        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, notifContext.packageName)
+                    } else {
+                        android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            .setData(android.net.Uri.parse("package:${notifContext.packageName}"))
+                    }
+                    notifContext.startActivity(intent)
                 }
             )
         }

@@ -99,7 +99,22 @@ class PlaybackService : MediaSessionService() {
             .setCallback(PlaybackSessionCallback())
             .build()
 
+        // Sem isso, a notificação de reprodução usa um canal e um nome
+        // genéricos escolhidos pela própria biblioteca — dando um nome
+        // claro aqui, fica mais fácil pro usuário achar e conferir se as
+        // notificações do player estão ativadas em Ajustes > Apps > Music
+        // Box > Notificações, caso não estejam aparecendo.
+        val notificationProvider = androidx.media3.session.DefaultMediaNotificationProvider.Builder(this)
+            .setChannelId(NOTIFICATION_CHANNEL_ID)
+            .setChannelName(R.string.notification_channel_playback)
+            .build()
+        setMediaNotificationProvider(notificationProvider)
+
         restoreSavedQueueIfAny(player)
+    }
+
+    companion object {
+        const val NOTIFICATION_CHANNEL_ID = "harmonic_playback"
     }
 
     private fun restoreSavedQueueIfAny(player: ExoPlayer) {

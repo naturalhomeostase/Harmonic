@@ -557,7 +557,7 @@ fun LibraryScreen(
                                 },
                                 com.harmonic.player.ui.common.ActionSheetItem(
                                     Icons.Filled.Delete, "Excluir",
-                                    tint = MaterialTheme.colorScheme.error
+                                    tint = com.harmonic.player.ui.common.DangerColor
                                 ) {
                                     deleteConfirm = "Excluir todas as músicas de \"$artistName\"?" to {
                                         dao.deleteSongsByArtist(artistName)
@@ -667,7 +667,7 @@ fun LibraryScreen(
                                 },
                                 com.harmonic.player.ui.common.ActionSheetItem(
                                     Icons.Filled.Delete, "Excluir",
-                                    tint = MaterialTheme.colorScheme.error
+                                    tint = com.harmonic.player.ui.common.DangerColor
                                 ) {
                                     deleteConfirm = "Excluir todas as músicas do álbum \"$albumName\"?" to {
                                         dao.deleteSongsByAlbum(albumId)
@@ -745,7 +745,7 @@ fun LibraryScreen(
                                 },
                                 com.harmonic.player.ui.common.ActionSheetItem(
                                     Icons.Filled.Delete, "Excluir",
-                                    tint = MaterialTheme.colorScheme.error
+                                    tint = com.harmonic.player.ui.common.DangerColor
                                 ) {
                                     deleteConfirm = "Excluir todas as músicas da pasta \"${folder.substringAfterLast('/')}\"?" to {
                                         dao.deleteSongsByFolder(folder)
@@ -836,7 +836,7 @@ fun LibraryScreen(
                                                         },
                                                         com.harmonic.player.ui.common.ActionSheetItem(
                                                             Icons.Filled.Delete, "Excluir",
-                                                            tint = MaterialTheme.colorScheme.error
+                                                            tint = com.harmonic.player.ui.common.DangerColor
                                                         ) {
                                                             showPlaylistMenu = false
                                                             playlistForDialog = playlist
@@ -1301,8 +1301,12 @@ private fun SongList(
                     isCurrentlyPlaying = song.id == currentPlayingSongId,
                     isPlaying = isPlaying,
                     isSelected = song.id in selectedIds,
+                    selectionMode = selectedIds.isNotEmpty(),
                     onToggleSelect = {
                         selectedIds = if (song.id in selectedIds) selectedIds - song.id else selectedIds + song.id
+                    },
+                    onLongClick = {
+                        if (song.id !in selectedIds) selectedIds = selectedIds + song.id
                     }
                 )
             }
@@ -1443,7 +1447,9 @@ private fun SongRow(
     isCurrentlyPlaying: Boolean = false,
     isPlaying: Boolean = false,
     isSelected: Boolean = false,
-    onToggleSelect: () -> Unit = {}
+    selectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongClick: () -> Unit = {}
 ) {
     val accentColor = MaterialTheme.colorScheme.primary
     // Estado do menu de opções vive aqui, na própria linha — assim o menu
@@ -1453,20 +1459,31 @@ private fun SongRow(
 
     ListItem(
         leadingContent = {
-            // Tocar na capa marca/desmarca a música pra seleção múltipla
-            // (fila, favoritos ou playlist em lote) — um "check" verde
-            // some por cima da capa quando selecionada, e tocar em
-            // qualquer outra parte da linha continua tocando a música
-            // normalmente.
-            Box(contentAlignment = Alignment.Center) {
-                com.harmonic.player.ui.common.AlbumArt(
-                    song = song,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                        .clickable(onClick = onToggleSelect)
-                )
-                if (isSelected) {
+            // Clique longo em qualquer parte da linha entra no "modo
+            // seleção" (barra de ações no topo pra fila/favoritos/
+            // playlist) e mostra um checkbox do lado da capa — enquanto
+            // esse modo estiver ativo, tocar na linha marca/desmarca em
+            // vez de tocar a música.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelect() },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = accentColor,
+                            uncheckedColor = Color.White.copy(alpha = 0.5f)
+                        )
+                    )
+                }
+                Box(contentAlignment = Alignment.Center) {
+                    com.harmonic.player.ui.common.AlbumArt(
+                        song = song,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                            .clickable(onClick = onToggleSelect)
+                    )
+                    if (isSelected) {
                     Box(
                         modifier = Modifier
                             .size(48.dp)
@@ -1479,6 +1496,7 @@ private fun SongRow(
                         tint = accentColor,
                         modifier = Modifier.size(24.dp)
                     )
+                }
                 }
             }
         },
@@ -1529,9 +1547,9 @@ private fun SongRow(
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(2.dp))
                 }
-                IconButton(onClick = onFavoriteToggle, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = onFavoriteToggle, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                         contentDescription = "Favoritar",
@@ -1541,7 +1559,7 @@ private fun SongRow(
                 // Ícone de menu à direita da linha — abre as opções dessa
                 // música (tocar em seguida, playlist, cortar, etc).
                 Box {
-                    IconButton(onClick = { showOptions = true }, modifier = Modifier.size(40.dp)) {
+                    IconButton(onClick = { showOptions = true }, modifier = Modifier.size(36.dp)) {
                         Icon(
                             imageVector = Icons.Filled.MoreVert,
                             contentDescription = "Mais opções",
@@ -1562,9 +1580,12 @@ private fun SongRow(
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier
-            .compactVertical(3.dp)
+            .compactVertical(6.dp)
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = { if (selectionMode) onToggleSelect() else onClick() },
+                onLongClick = onLongClick
+            )
     )
 }
 
@@ -1584,7 +1605,6 @@ private fun SongOptionsSheet(
 ) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
-
     var showActionSheet by remember { mutableStateOf(true) }
     var showPlaylistPicker by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
@@ -1625,42 +1645,60 @@ private fun SongOptionsSheet(
         androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
     ) { /* o usuário decide na própria tela do sistema; nada a fazer aqui */ }
 
-    // Salvar tags no arquivo de música (não criado pelo próprio app) exige
-    // uma permissão especial em Android 10+ (armazenamento com escopo) —
-    // sem tratar isso, TagEditor.write() lançava SecurityException, o
-    // "ok" nunca chegava a acontecer, e o botão "Salvar" parecia não fazer
-    // nada. Esse launcher guarda os valores pendentes e tenta salvar de
-    // novo assim que o usuário concede a permissão na tela do sistema.
+    // Salvar tags grava direto no arquivo via jaudiotagger — não passa pelo
+    // MediaStore, então o pedido de permissão via createWriteRequest não
+    // adianta aqui (isso só libera acesso por Uri/FD do MediaStore, e
+    // jaudiotagger usa java.io.File puro). Em Android 10+, escrever direto
+    // no arquivo de outro app exige a permissão especial "Acesso a todos os
+    // arquivos" (MANAGE_EXTERNAL_STORAGE) — sem ela, a escrita falhava
+    // (IOException, não SecurityException) e o "Salvar" parecia não fazer
+    // nada. Em Android 9 e anteriores, basta a permissão comum de escrita.
     var pendingTagValues by remember { mutableStateOf<com.harmonic.player.data.TagEditor.TagValues?>(null) }
-    val tagWriteSecurityLauncher = rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
-    ) { result ->
+    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
         val values = pendingTagValues
         pendingTagValues = null
-        if (result.resultCode == android.app.Activity.RESULT_OK && values != null) {
+        if (granted && values != null) {
             scope.launch { saveTagsToFileAndDb(context, dao, song, values) }
         } else if (values != null) {
             android.widget.Toast.makeText(context, "Permissão negada — as tags não foram salvas", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
-    /** Tenta gravar as tags no arquivo; se faltar permissão, pede na tela do sistema e tenta de novo depois. */
+    /** Confere/pede a permissão de arquivo certa pra essa versão do Android antes de gravar. */
     suspend fun saveTags(values: com.harmonic.player.data.TagEditor.TagValues) {
-        try {
-            saveTagsToFileAndDb(context, dao, song, values)
-        } catch (e: SecurityException) {
-            pendingTagValues = values
-            val intentSender = if (android.os.Build.VERSION.SDK_INT >= 30) {
-                android.provider.MediaStore.createWriteRequest(context.contentResolver, listOf(songUri)).intentSender
-            } else {
-                (e as? android.app.RecoverableSecurityException)?.userAction?.actionIntent?.intentSender
-            }
-            if (intentSender != null) {
-                tagWriteSecurityLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(intentSender).build())
-            } else {
-                android.widget.Toast.makeText(context, "Não foi possível salvar as tags nesse arquivo", android.widget.Toast.LENGTH_LONG).show()
-            }
+        val sdk = android.os.Build.VERSION.SDK_INT
+        val hasFileAccess = when {
+            sdk >= 30 -> android.os.Environment.isExternalStorageManager()
+            sdk >= 29 -> true // requestLegacyExternalStorage no manifesto já cobre o Android 10
+            else -> androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         }
+        if (!hasFileAccess) {
+            pendingTagValues = values
+            if (sdk >= 30) {
+                val intent = try {
+                    android.content.Intent(
+                        android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        android.net.Uri.parse("package:${context.packageName}")
+                    )
+                } catch (e: Exception) {
+                    android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                }
+                context.startActivity(intent)
+                android.widget.Toast.makeText(
+                    context,
+                    "Ative \"Permitir acesso a todos os arquivos\" pro Music Box e depois toque em Salvar de novo",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            } else {
+                legacyStoragePermissionLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+            return
+        }
+        saveTagsToFileAndDb(context, dao, song, values)
     }
 
     fun deleteSong() {
@@ -1761,7 +1799,7 @@ private fun SongOptionsSheet(
             },
             com.harmonic.player.ui.common.ActionSheetItem(
                 Icons.Filled.Delete, "Excluir",
-                tint = MaterialTheme.colorScheme.error
+                tint = com.harmonic.player.ui.common.DangerColor
             ) {
                 showActionSheet = false; showDeleteConfirm = true
             }

@@ -176,7 +176,7 @@ fun PlaylistsScreen(
                                             },
                                             ActionSheetItem(
                                                 Icons.Filled.Delete, "Excluir",
-                                                tint = MaterialTheme.colorScheme.error
+                                                tint = com.harmonic.player.ui.common.DangerColor
                                             ) {
                                                 showMenu = false
                                                 playlistForDialog = playlist

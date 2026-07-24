@@ -15,6 +15,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
+ * Vermelho fixo do próprio app pra ações "perigosas" (Excluir) dentro do
+ * [ThemedDropdownMenu]. Não usa `MaterialTheme.colorScheme.error` porque
+ * esse vem do tema dinâmico/padrão do Android (Material You no Android
+ * 12+, ou o vermelho padrão do Material Design), e o fundo desse menu é
+ * pintado com a cor de destaque ESCOLHIDA NO APP — a combinação das duas
+ * cores, vindas de lugares diferentes, às vezes ficava ilegível.
+ */
+val DangerColor = Color(0xFFFF6B5B)
+
+/**
  * Um item do menu de opções (música/playlist/pasta/artista/álbum...).
  * [tint] é opcional — usado por ações "perigosas" tipo Excluir, que ficam
  * em vermelho em vez da cor padrão.

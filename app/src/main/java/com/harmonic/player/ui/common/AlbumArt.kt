@@ -3,6 +3,7 @@ package com.harmonic.player.ui.common
 import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -68,7 +69,9 @@ fun AlbumArt(
 
     Box(
         modifier = if (bitmap == null) {
-            modifier.border(BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)), placeholderShape)
+            modifier
+                .background(Color.White.copy(alpha = 0.08f), placeholderShape)
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)), placeholderShape)
         } else modifier,
         contentAlignment = Alignment.Center
     ) {
