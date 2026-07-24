@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.layout.layout
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -111,6 +112,24 @@ private val playlistSortOptions = listOf(
  * por todas as chamadas de SongList/SongRow espalhadas pelas abas.
  */
 private val LocalSongTitleBrush = compositionLocalOf<Brush?> { null }
+
+/**
+ * Equivalente a um padding vertical negativo — usado pra deixar as linhas
+ * das listas mais compactas, compensando o padding interno do ListItem.
+ * `Modifier.padding()` do Compose passou a rejeitar valores negativos em
+ * tempo de execução (`IllegalArgumentException: Padding must be
+ * non-negative`), então em vez de padding isso mede o item normalmente e
+ * só reduz a altura que ele reporta pro layout pai, deslocando o desenho
+ * pra cima — mesmo resultado visual, sem cair na validação.
+ */
+private fun Modifier.compactVertical(amount: androidx.compose.ui.unit.Dp): Modifier =
+    layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        val reduceBy = (amount.roundToPx() * 2).coerceIn(0, placeable.height)
+        layout(placeable.width, placeable.height - reduceBy) {
+            placeable.placeRelative(0, -amount.roundToPx())
+        }
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -774,7 +793,7 @@ fun LibraryScreen(
                                     leadingContent = { Icon(Icons.Filled.QueueMusic, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                                     headlineContent = { Text(playlist.name, color = Color.White) },
                                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                    modifier = Modifier.padding(vertical = (-3).dp).clickable { onOpenPlaylist(playlist.id) },
+                                    modifier = Modifier.compactVertical(3.dp).clickable { onOpenPlaylist(playlist.id) },
                                     trailingContent = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             IconButton(onClick = {
@@ -1096,7 +1115,7 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
             ListItem(
                 headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                modifier = Modifier.padding(vertical = (-3).dp).clickable { onClick(name) }
+                modifier = Modifier.compactVertical(3.dp).clickable { onClick(name) }
             )
         }
     }
@@ -1543,7 +1562,7 @@ private fun SongRow(
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier
-            .padding(vertical = (-3).dp)
+            .compactVertical(3.dp)
             .fillMaxWidth()
             .clickable(onClick = onClick)
     )

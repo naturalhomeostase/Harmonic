@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.Playlist
 import com.harmonic.player.data.SongDao
@@ -32,6 +33,21 @@ private val playlistSortOptions = listOf(
     SortOption("createdAt", "Data adicionada"),
     SortOption("modifiedAt", "Modificada")
 )
+
+/**
+ * Equivalente a um padding vertical negativo (deixa a linha mais compacta),
+ * sem usar Modifier.padding() com valor negativo — o Compose passou a
+ * rejeitar isso em tempo de execução (`IllegalArgumentException: Padding
+ * must be non-negative`).
+ */
+private fun Modifier.compactVertical(amount: androidx.compose.ui.unit.Dp): Modifier =
+    layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        val reduceBy = (amount.roundToPx() * 2).coerceIn(0, placeable.height)
+        layout(placeable.width, placeable.height - reduceBy) {
+            placeable.placeRelative(0, -amount.roundToPx())
+        }
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,7 +133,7 @@ fun PlaylistsScreen(
                         leadingContent = { Icon(Icons.Filled.QueueMusic, contentDescription = null) },
                         headlineContent = { Text(playlist.name) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.padding(vertical = (-3).dp).clickable { onOpenPlaylist(playlist.id) },
+                        modifier = Modifier.compactVertical(3.dp).clickable { onOpenPlaylist(playlist.id) },
                         trailingContent = {
                             Row {
                                 IconButton(onClick = {
