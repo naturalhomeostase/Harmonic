@@ -14,7 +14,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.LyricLine
@@ -32,6 +34,19 @@ import kotlinx.coroutines.launch
  * pode TOCAR numa linha pra selecioná-la (fundo translúcido) — essa é a
  * linha usada pelo botão de compartilhar no topo da tela.
  */
+/**
+ * Sombra difusa escura por trás do texto da letra — sem isso, quando a cor
+ * da letra (branca, ou a cor de destaque na linha atual) fica parecida com
+ * o tom do fundo escolhido pelo usuário (tema/papel de parede/imagem da
+ * galeria), o texto quase desaparece. Uma sombra suave cria contraste em
+ * qualquer fundo, sem precisar adivinhar a cor de fundo certa caso a caso.
+ */
+private val lyricTextShadow = Shadow(
+    color = Color.Black.copy(alpha = 0.75f),
+    offset = Offset(0f, 1f),
+    blurRadius = 10f
+)
+
 @Composable
 fun LyricsView(
     lyrics: LyricsResult,
@@ -45,7 +60,7 @@ fun LyricsView(
         is LyricsResult.PlainText -> Box(modifier = modifier, contentAlignment = Alignment.TopCenter) {
             Text(
                 lyrics.text,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyLarge.copy(shadow = lyricTextShadow),
                 color = Color.White,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(24.dp)
@@ -105,7 +120,8 @@ private fun SyncedLyrics(
             )
             Text(
                 line.text.ifBlank { "♪" },
-                style = if (isCurrent) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
+                style = (if (isCurrent) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge)
+                    .copy(shadow = lyricTextShadow),
                 color = color,
                 textAlign = TextAlign.Center,
                 modifier = Modifier

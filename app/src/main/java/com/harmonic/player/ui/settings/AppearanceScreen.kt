@@ -388,7 +388,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
+                com.harmonic.player.ui.common.ThemedSwitch(
                     checked = titleGradientEnabled,
                     onCheckedChange = { scope.launch { settings.setTitleGradientEnabled(it) } }
                 )

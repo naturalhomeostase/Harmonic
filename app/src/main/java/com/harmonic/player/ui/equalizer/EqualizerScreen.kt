@@ -40,7 +40,7 @@ fun EqualizerScreen(
                     }
                 },
                 actions = {
-                    Switch(
+                    com.harmonic.player.ui.common.ThemedSwitch(
                         checked = eqState.enabled,
                         onCheckedChange = { enabled ->
                             equalizerController.setEnabled(enabled)

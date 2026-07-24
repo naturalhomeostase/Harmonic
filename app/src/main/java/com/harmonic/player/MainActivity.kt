@@ -162,7 +162,15 @@ class MainActivity : ComponentActivity() {
                         }
 
                         LaunchedEffect(Unit) {
-                            if (!audioPermissionGranted) {
+                            // Antes isso só disparava quando a permissão de
+                            // áudio ainda não tinha sido concedida — então,
+                            // se o áudio já estava liberado (reinstalação,
+                            // ou o usuário negou notificações da primeira
+                            // vez), a permissão de notificação nunca era
+                            // pedida de novo, e a barra de notificação com
+                            // os controles de play/pause/stop simplesmente
+                            // não aparecia com o app em segundo plano.
+                            if (!permissionsState.allPermissionsGranted) {
                                 permissionsState.launchMultiplePermissionRequest()
                             }
                         }
@@ -311,8 +319,10 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
         composable("playlists") {
             PlaylistsScreen(
                 dao = app.database.songDao(),
+                playerController = playerController,
                 onBack = { navController.popBackStack() },
-                onOpenPlaylist = { id -> navController.navigate("playlist/$id") }
+                onOpenPlaylist = { id -> navController.navigate("playlist/$id") },
+                onOpenNowPlaying = { navController.navigate("now_playing") }
             )
         }
         composable(

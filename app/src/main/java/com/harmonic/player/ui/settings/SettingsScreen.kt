@@ -73,7 +73,7 @@ fun SettingsScreen(
                 subtitle = "Mostra os álbuns como capas em grade em vez de lista",
                 onClick = { scope.launch { settings.setAlbumGridView(!albumGridView) } },
                 trailing = {
-                    Switch(
+                    com.harmonic.player.ui.common.ThemedSwitch(
                         checked = albumGridView,
                         onCheckedChange = { scope.launch { settings.setAlbumGridView(it) } }
                     )
@@ -86,7 +86,7 @@ fun SettingsScreen(
                 subtitle = "Mostra os artistas com foto em grade em vez de lista",
                 onClick = { scope.launch { settings.setArtistGridView(!artistGridView) } },
                 trailing = {
-                    Switch(
+                    com.harmonic.player.ui.common.ThemedSwitch(
                         checked = artistGridView,
                         onCheckedChange = { scope.launch { settings.setArtistGridView(it) } }
                     )
@@ -152,7 +152,7 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(tab.label)
-                            Switch(
+                            com.harmonic.player.ui.common.ThemedSwitch(
                                 checked = !isHidden,
                                 onCheckedChange = { visible -> scope.launch { settings.setTabHidden(tab.name, !visible) } }
                             )

@@ -68,6 +68,11 @@ object TagEditor {
 
             audioFile.commit()
             true
+        } catch (e: SecurityException) {
+            // Armazenamento com escopo (Android 10+): o app não tem
+            // permissão de escrita direta nesse arquivo — quem chama
+            // precisa pedir a permissão via MediaStore e tentar de novo.
+            throw e
         } catch (e: Exception) {
             false
         }

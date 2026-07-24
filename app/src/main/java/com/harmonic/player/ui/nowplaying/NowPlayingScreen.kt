@@ -283,11 +283,11 @@ fun NowPlayingScreen(
                 color = Color.White.copy(alpha = 0.85f)
             )
 
-            // Info técnica: bitrate, formato, frequência
+            // Info técnica: bitrate, formato, frequência, tamanho do arquivo
             state.currentSong?.let { song ->
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "${song.format} • ${song.bitrate?.let { "${it / 1000} kbps" } ?: ""}",
+                    "${song.format} • ${song.bitrate?.let { "${it / 1000} kbps" } ?: ""} • ${formatFileSize(song.sizeBytes)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White.copy(alpha = 0.55f)
                 )
@@ -581,4 +581,11 @@ private fun formatDuration(ms: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+/** Formata bytes como "3,4 MB" (ou KB pros arquivos bem pequenos). */
+private fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0) return ""
+    val mb = bytes / 1024.0 / 1024.0
+    return if (mb >= 0.1) "%.1f MB".format(mb) else "%.0f KB".format(bytes / 1024.0)
 }

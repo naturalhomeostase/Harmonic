@@ -82,14 +82,30 @@ class PlayerController(
         controllerFuture.addListener({
             controller = controllerFuture.get()
             attachListener()
-            // Se o PlaybackService já restaurou uma fila salva (ver
-            // restoreSavedQueueIfNeeded nele), aqui só precisamos reconstruir
-            // a lista de Song correspondente pra UI mostrar corretamente.
+            // O listener acima só é avisado de MUDANÇAS futuras — se o
+            // serviço já estava tocando em segundo plano quando o app foi
+            // reaberto (ex: música tocando com o app fechado), nenhum
+            // "onIsPlayingChanged" é disparado, porque isPlaying não mudou.
+            // Sem isso, o mini player ficava preso mostrando o ícone de
+            // play mesmo com a música already tocando. Sincroniza o estado
+            // atual do controller manualmente logo após conectar.
+            syncInitialStateFromController()
             resolveQueueFromControllerIfNeeded()
             startPeriodicPositionSave()
             startABRepeatMonitor()
             onConnected()
         }, MoreExecutors.directExecutor())
+    }
+
+    private fun syncInitialStateFromController() {
+        val c = controller ?: return
+        _uiState.value = _uiState.value.copy(
+            isPlaying = c.isPlaying,
+            shuffleEnabled = c.shuffleModeEnabled,
+            repeatMode = c.repeatMode,
+            durationMs = c.duration.coerceAtLeast(0),
+            positionMs = c.currentPosition.coerceAtLeast(0)
+        )
     }
 
     private fun resolveQueueFromControllerIfNeeded() {

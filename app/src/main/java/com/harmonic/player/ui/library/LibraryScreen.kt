@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
@@ -150,9 +152,6 @@ fun LibraryScreen(
         }
     } else null
 
-    // Música selecionada pra mostrar o menu de opções (tocar em seguida,
-    // adicionar à fila, adicionar à playlist). null = menu fechado.
-    var songForOptions by remember { mutableStateOf<Song?>(null) }
     var bulkAddSongs by remember { mutableStateOf<List<Song>?>(null) }
     var deleteConfirm by remember { mutableStateOf<Pair<String, suspend () -> Unit>?>(null) }
     var renameArtistTarget by remember { mutableStateOf<String?>(null) }
@@ -168,7 +167,12 @@ fun LibraryScreen(
     var playlistSortKey by remember { mutableStateOf("createdAt") }
     var playlistSortAscending by remember { mutableStateOf(false) }
     var showCreatePlaylistFab by remember { mutableStateOf(false) }
-    var playlistForOptions by remember { mutableStateOf<Playlist?>(null) }
+    // Qual playlist está com diálogo de renomear/excluir aberto — o menu de
+    // opções em si agora vive dentro da própria linha da playlist, perto do
+    // botão "⋮" que o aciona.
+    var playlistForDialog by remember { mutableStateOf<Playlist?>(null) }
+    var showRenamePlaylistDialog by remember { mutableStateOf(false) }
+    var showDeletePlaylistConfirm by remember { mutableStateOf(false) }
 
     var selectedTab by remember { mutableStateOf(LibraryTab.SONGS) }
     // Quando o usuário toca num nome de artista/álbum/gênero/pasta, guardamos
@@ -421,7 +425,9 @@ fun LibraryScreen(
                     songs = searchResults,
                     onSongClick = { onSongClick(searchResults, searchResults.indexOf(it), "search"); onOpenNowPlaying() },
                     onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                    onLongPress = { songForOptions = it },
+                    dao = dao,
+                    onPlayNext = { playerController.playNext(it) },
+                    onAddToQueueEnd = { playerController.addToQueueEnd(it) },
                     currentPlayingSongId = playbackState.currentSong?.id,
                     isPlaying = playbackState.isPlaying
                 )
@@ -441,7 +447,9 @@ fun LibraryScreen(
                         songs = sortedSongs,
                         onSongClick = { onSongClick(sortedSongs, sortedSongs.indexOf(it), "songs"); onOpenNowPlaying() },
                         onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                        onLongPress = { songForOptions = it },
+                        dao = dao,
+                    onPlayNext = { playerController.playNext(it) },
+                    onAddToQueueEnd = { playerController.addToQueueEnd(it) },
                         currentPlayingSongId = playbackState.currentSong?.id,
                         isPlaying = playbackState.isPlaying
                     )
@@ -453,7 +461,9 @@ fun LibraryScreen(
                         songs = songs,
                         onSongClick = { onSongClick(songs, songs.indexOf(it), "favorites"); onOpenNowPlaying() },
                         onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                        onLongPress = { songForOptions = it },
+                        dao = dao,
+                    onPlayNext = { playerController.playNext(it) },
+                    onAddToQueueEnd = { playerController.addToQueueEnd(it) },
                         currentPlayingSongId = playbackState.currentSong?.id,
                         isPlaying = playbackState.isPlaying
                     )
@@ -541,7 +551,9 @@ fun LibraryScreen(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it), "artist:$artistName"); onOpenNowPlaying() },
                             onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                            onLongPress = { songForOptions = it },
+                            dao = dao,
+                    onPlayNext = { playerController.playNext(it) },
+                    onAddToQueueEnd = { playerController.addToQueueEnd(it) },
                             currentPlayingSongId = playbackState.currentSong?.id,
                             isPlaying = playbackState.isPlaying
                         )
@@ -650,7 +662,9 @@ fun LibraryScreen(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it), "album:$albumId"); onOpenNowPlaying() },
                             onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                            onLongPress = { songForOptions = it },
+                            dao = dao,
+                    onPlayNext = { playerController.playNext(it) },
+                    onAddToQueueEnd = { playerController.addToQueueEnd(it) },
                             currentPlayingSongId = playbackState.currentSong?.id,
                             isPlaying = playbackState.isPlaying
                         )
@@ -669,7 +683,9 @@ fun LibraryScreen(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it), "genre:${drilledGroup ?: ""}"); onOpenNowPlaying() },
                             onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                            onLongPress = { songForOptions = it },
+                            dao = dao,
+                    onPlayNext = { playerController.playNext(it) },
+                    onAddToQueueEnd = { playerController.addToQueueEnd(it) },
                             currentPlayingSongId = playbackState.currentSong?.id,
                             isPlaying = playbackState.isPlaying
                         )
@@ -723,7 +739,9 @@ fun LibraryScreen(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it), "folder:$folder"); onOpenNowPlaying() },
                             onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
-                            onLongPress = { songForOptions = it },
+                            dao = dao,
+                    onPlayNext = { playerController.playNext(it) },
+                    onAddToQueueEnd = { playerController.addToQueueEnd(it) },
                             currentPlayingSongId = playbackState.currentSong?.id,
                             isPlaying = playbackState.isPlaying
                         )
@@ -751,13 +769,29 @@ fun LibraryScreen(
                     } else {
                         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
                             items(playlists, key = { it.id }) { playlist ->
+                                var showPlaylistMenu by remember { mutableStateOf(false) }
                                 ListItem(
                                     leadingContent = { Icon(Icons.Filled.QueueMusic, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                                     headlineContent = { Text(playlist.name, color = Color.White) },
                                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                    modifier = Modifier.clickable { onOpenPlaylist(playlist.id) },
+                                    modifier = Modifier.padding(vertical = (-3).dp).clickable { onOpenPlaylist(playlist.id) },
                                     trailingContent = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(onClick = {
+                                                scope.launch {
+                                                    val songs = dao.getPlaylistSongs(playlist.id).first()
+                                                    if (songs.isNotEmpty()) {
+                                                        playerController.requestPlayQueue(songs, 0, "playlist:${playlist.id}", playlist.name)
+                                                        onOpenNowPlaying()
+                                                    }
+                                                }
+                                            }) {
+                                                Icon(
+                                                    Icons.Filled.PlayArrow,
+                                                    contentDescription = "Tocar playlist",
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
                                             IconButton(onClick = {
                                                 scope.launch { dao.setPlaylistFavorite(playlist.id, !playlist.isFavorite) }
                                             }) {
@@ -767,8 +801,30 @@ fun LibraryScreen(
                                                     tint = if (playlist.isFavorite) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.6f)
                                                 )
                                             }
-                                            IconButton(onClick = { playlistForOptions = playlist }) {
-                                                Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções", tint = Color.White.copy(alpha = 0.85f))
+                                            Box {
+                                                IconButton(onClick = { showPlaylistMenu = true }) {
+                                                    Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções", tint = Color.White.copy(alpha = 0.85f))
+                                                }
+                                                com.harmonic.player.ui.common.ActionSheet(
+                                                    expanded = showPlaylistMenu,
+                                                    onDismiss = { showPlaylistMenu = false },
+                                                    title = playlist.name,
+                                                    items = listOf(
+                                                        com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Edit, "Renomear") {
+                                                            showPlaylistMenu = false
+                                                            playlistForDialog = playlist
+                                                            showRenamePlaylistDialog = true
+                                                        },
+                                                        com.harmonic.player.ui.common.ActionSheetItem(
+                                                            Icons.Filled.Delete, "Excluir",
+                                                            tint = MaterialTheme.colorScheme.error
+                                                        ) {
+                                                            showPlaylistMenu = false
+                                                            playlistForDialog = playlist
+                                                            showDeletePlaylistConfirm = true
+                                                        }
+                                                    )
+                                                )
                                             }
                                         }
                                     }
@@ -810,33 +866,11 @@ fun LibraryScreen(
         )
     }
 
-    playlistForOptions?.let { playlist ->
-        var showRenamePlaylistDialog by remember { mutableStateOf(false) }
-        var showDeletePlaylistConfirm by remember { mutableStateOf(false) }
-        var showPlaylistSheet by remember { mutableStateOf(true) }
-
-        if (showPlaylistSheet) {
-            com.harmonic.player.ui.common.ActionSheet(
-                onDismiss = { showPlaylistSheet = false; playlistForOptions = null },
-                title = playlist.name,
-                items = listOf(
-                    com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Edit, "Renomear") {
-                        showPlaylistSheet = false; showRenamePlaylistDialog = true
-                    },
-                    com.harmonic.player.ui.common.ActionSheetItem(
-                        Icons.Filled.Delete, "Excluir",
-                        tint = MaterialTheme.colorScheme.error
-                    ) {
-                        showPlaylistSheet = false; showDeletePlaylistConfirm = true
-                    }
-                )
-            )
-        }
-
+    playlistForDialog?.let { playlist ->
         if (showRenamePlaylistDialog) {
             var newName by remember { mutableStateOf(playlist.name) }
             AlertDialog(
-                onDismissRequest = { showRenamePlaylistDialog = false; playlistForOptions = null },
+                onDismissRequest = { showRenamePlaylistDialog = false; playlistForDialog = null },
                 title = { Text("Renomear playlist") },
                 text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true) },
                 confirmButton = {
@@ -845,43 +879,33 @@ fun LibraryScreen(
                         onClick = {
                             scope.launch { dao.renamePlaylist(playlist.id, newName.trim()) }
                             showRenamePlaylistDialog = false
-                            playlistForOptions = null
+                            playlistForDialog = null
                         }
                     ) { Text("Salvar") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showRenamePlaylistDialog = false; playlistForOptions = null }) { Text("Cancelar") }
+                    TextButton(onClick = { showRenamePlaylistDialog = false; playlistForDialog = null }) { Text("Cancelar") }
                 }
             )
         }
 
         if (showDeletePlaylistConfirm) {
             AlertDialog(
-                onDismissRequest = { showDeletePlaylistConfirm = false; playlistForOptions = null },
+                onDismissRequest = { showDeletePlaylistConfirm = false; playlistForDialog = null },
                 title = { Text("Excluir playlist?") },
                 text = { Text("\"${playlist.name}\" será excluída. As músicas continuam na sua biblioteca.") },
                 confirmButton = {
                     TextButton(onClick = {
                         scope.launch { dao.deletePlaylist(playlist.id) }
                         showDeletePlaylistConfirm = false
-                        playlistForOptions = null
+                        playlistForDialog = null
                     }) { Text("Excluir", color = MaterialTheme.colorScheme.error) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDeletePlaylistConfirm = false; playlistForOptions = null }) { Text("Cancelar") }
+                    TextButton(onClick = { showDeletePlaylistConfirm = false; playlistForDialog = null }) { Text("Cancelar") }
                 }
             )
         }
-    }
-
-    songForOptions?.let { song ->
-        SongOptionsSheet(
-            song = song,
-            dao = dao,
-            onDismiss = { songForOptions = null },
-            onPlayNext = { playerController.playNext(song); songForOptions = null },
-            onAddToQueueEnd = { playerController.addToQueueEnd(song); songForOptions = null }
-        )
     }
 
     // Excluir todas as músicas de um artista/álbum/pasta de uma vez —
@@ -1050,17 +1074,18 @@ private fun GroupHeader(
             }
         }
         if (menuItems != null) {
-            IconButton(onClick = { showMenu = true }) {
-                Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções", tint = Color.White)
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções", tint = Color.White)
+                }
+                com.harmonic.player.ui.common.ActionSheet(
+                    expanded = showMenu,
+                    onDismiss = { showMenu = false },
+                    title = title,
+                    items = menuItems.map { item -> item.copy(onClick = { showMenu = false; item.onClick() }) }
+                )
             }
         }
-    }
-    if (showMenu && menuItems != null) {
-        com.harmonic.player.ui.common.ActionSheet(
-            onDismiss = { showMenu = false },
-            title = title,
-            items = menuItems.map { item -> item.copy(onClick = { showMenu = false; item.onClick() }) }
-        )
     }
 }
 
@@ -1071,7 +1096,7 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
             ListItem(
                 headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                modifier = Modifier.clickable { onClick(name) }
+                modifier = Modifier.padding(vertical = (-3).dp).clickable { onClick(name) }
             )
         }
     }
@@ -1213,22 +1238,133 @@ private fun AlbumGridCell(album: AlbumSummary, dao: SongDao, onClick: () -> Unit
 @Composable
 private fun SongList(
     songs: List<Song>,
+    dao: com.harmonic.player.data.SongDao,
     onSongClick: (Song) -> Unit,
     onFavoriteToggle: (Song) -> Unit,
-    onLongPress: (Song) -> Unit,
+    onPlayNext: (Song) -> Unit,
+    onAddToQueueEnd: (Song) -> Unit,
     currentPlayingSongId: Long? = null,
     isPlaying: Boolean = false
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(songs, key = { it.id }) { song ->
-            SongRow(
-                song = song,
-                onClick = { onSongClick(song) },
-                onFavoriteToggle = { onFavoriteToggle(song) },
-                onLongPress = { onLongPress(song) },
-                isCurrentlyPlaying = song.id == currentPlayingSongId,
-                isPlaying = isPlaying
+    val scope = rememberCoroutineScope()
+    // Toca na capa de uma música pra marcar/desmarcar ela pra uma ação em
+    // lote (fila, favoritos, playlist) — reseta se a lista em si mudar
+    // (ex: trocou de aba), pra não ficar seleção "fantasma" de outra lista.
+    var selectedIds by remember(songs) { mutableStateOf(emptySet<Long>()) }
+    var showPlaylistPickerForSelection by remember { mutableStateOf(false) }
+    val selectedSongs = remember(songs, selectedIds) { songs.filter { it.id in selectedIds } }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (selectedIds.isNotEmpty()) {
+            SelectionActionBar(
+                count = selectedIds.size,
+                onClose = { selectedIds = emptySet() },
+                onAddToQueue = {
+                    selectedSongs.forEach { onAddToQueueEnd(it) }
+                    selectedIds = emptySet()
+                },
+                onFavorite = {
+                    scope.launch { selectedSongs.forEach { dao.setFavorite(it.id, true) } }
+                    selectedIds = emptySet()
+                },
+                onAddToPlaylist = { showPlaylistPickerForSelection = true }
             )
+        }
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            items(songs, key = { it.id }) { song ->
+                SongRow(
+                    song = song,
+                    dao = dao,
+                    onClick = { onSongClick(song) },
+                    onFavoriteToggle = { onFavoriteToggle(song) },
+                    onPlayNext = { onPlayNext(song) },
+                    onAddToQueueEnd = { onAddToQueueEnd(song) },
+                    isCurrentlyPlaying = song.id == currentPlayingSongId,
+                    isPlaying = isPlaying,
+                    isSelected = song.id in selectedIds,
+                    onToggleSelect = {
+                        selectedIds = if (song.id in selectedIds) selectedIds - song.id else selectedIds + song.id
+                    }
+                )
+            }
+        }
+    }
+
+    if (showPlaylistPickerForSelection) {
+        val playlists by dao.getPlaylists().collectAsState(initial = emptyList())
+        AlertDialog(
+            onDismissRequest = { showPlaylistPickerForSelection = false },
+            title = { Text("Adicionar ${selectedIds.size} música(s) a qual playlist?") },
+            text = {
+                Column {
+                    if (playlists.isEmpty()) {
+                        Text("Nenhuma playlist ainda.")
+                    }
+                    playlists.forEach { playlist ->
+                        ListItem(
+                            headlineContent = { Text(playlist.name) },
+                            modifier = Modifier.clickable {
+                                val songsToAdd = selectedSongs
+                                scope.launch {
+                                    var pos = dao.getPlaylistSongs(playlist.id).first().size
+                                    songsToAdd.forEach { song ->
+                                        dao.addToPlaylist(com.harmonic.player.data.PlaylistSongCrossRef(playlist.id, song.id, pos))
+                                        pos++
+                                    }
+                                    dao.touchPlaylist(playlist.id)
+                                }
+                                showPlaylistPickerForSelection = false
+                                selectedIds = emptySet()
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPlaylistPickerForSelection = false }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
+/**
+ * Barra que aparece no topo da lista assim que 1+ músicas são selecionadas
+ * (tocando na capa) — deixa fazer em lote as mesmas 3 ações do menu "..."
+ * de uma música só: fila, favoritos, playlist.
+ */
+@Composable
+private fun SelectionActionBar(
+    count: Int,
+    onClose: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onFavorite: () -> Unit,
+    onAddToPlaylist: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onClose) {
+            Icon(Icons.Filled.Close, contentDescription = "Cancelar seleção", tint = Color.White)
+        }
+        Text(
+            "$count selecionada(s)",
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onAddToQueue) {
+            Icon(Icons.Filled.QueueMusic, contentDescription = "Adicionar à fila", tint = MaterialTheme.colorScheme.primary)
+        }
+        IconButton(onClick = onFavorite) {
+            Icon(Icons.Filled.Favorite, contentDescription = "Favoritar", tint = MaterialTheme.colorScheme.primary)
+        }
+        IconButton(onClick = onAddToPlaylist) {
+            Icon(Icons.Filled.PlaylistAdd, contentDescription = "Adicionar à playlist", tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -1280,21 +1416,74 @@ private fun AnimatedEqualizerBars(color: Color, modifier: Modifier = Modifier) {
 @Composable
 private fun SongRow(
     song: Song,
+    dao: com.harmonic.player.data.SongDao,
     onClick: () -> Unit,
     onFavoriteToggle: () -> Unit,
-    onLongPress: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueueEnd: () -> Unit,
     isCurrentlyPlaying: Boolean = false,
-    isPlaying: Boolean = false
+    isPlaying: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {}
 ) {
     val accentColor = MaterialTheme.colorScheme.primary
+    // Estado do menu de opções vive aqui, na própria linha — assim o menu
+    // abre coladinho no ícone que o aciona, alinhado ao lado dele, em vez
+    // de subir do rodapé da tela como antes.
+    var showOptions by remember { mutableStateOf(false) }
+
     ListItem(
         leadingContent = {
-            com.harmonic.player.ui.common.AlbumArt(
-                song = song,
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Ícone de menu à esquerda da linha — abre as opções dessa
+                // música (tocar em seguida, playlist, cortar, etc).
+                Box {
+                    IconButton(onClick = { showOptions = true }, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = "Mais opções",
+                            tint = Color.White.copy(alpha = 0.75f)
+                        )
+                    }
+                    if (showOptions) {
+                        SongOptionsSheet(
+                            song = song,
+                            dao = dao,
+                            onDismiss = { showOptions = false },
+                            onPlayNext = { showOptions = false; onPlayNext() },
+                            onAddToQueueEnd = { showOptions = false; onAddToQueueEnd() }
+                        )
+                    }
+                }
+                // Tocar na capa marca/desmarca a música pra seleção múltipla
+                // (fila, favoritos ou playlist em lote) — um "check" verde
+                // some por cima da capa quando selecionada, e tocar em
+                // qualquer outra parte da linha continua tocando a música
+                // normalmente.
+                Box(contentAlignment = Alignment.Center) {
+                    com.harmonic.player.ui.common.AlbumArt(
+                        song = song,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                            .clickable(onClick = onToggleSelect)
+                    )
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .background(Color.Black.copy(alpha = 0.45f))
+                        )
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = "Selecionada",
+                            tint = accentColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
         },
         headlineContent = {
             val titleBrush = LocalSongTitleBrush.current
@@ -1319,7 +1508,7 @@ private fun SongRow(
         },
         supportingContent = {
             Text(
-                "${song.artist} • ${song.album} • ${formatDuration(song.durationMs)}",
+                "${formatDuration(song.durationMs)} • ${song.artist}",
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = if (isCurrentlyPlaying) accentColor.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.7f)
@@ -1356,8 +1545,9 @@ private fun SongRow(
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier
+            .padding(vertical = (-3).dp)
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress)
+            .clickable(onClick = onClick)
     )
 }
 
@@ -1418,6 +1608,44 @@ private fun SongOptionsSheet(
         androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
     ) { /* o usuário decide na própria tela do sistema; nada a fazer aqui */ }
 
+    // Salvar tags no arquivo de música (não criado pelo próprio app) exige
+    // uma permissão especial em Android 10+ (armazenamento com escopo) —
+    // sem tratar isso, TagEditor.write() lançava SecurityException, o
+    // "ok" nunca chegava a acontecer, e o botão "Salvar" parecia não fazer
+    // nada. Esse launcher guarda os valores pendentes e tenta salvar de
+    // novo assim que o usuário concede a permissão na tela do sistema.
+    var pendingTagValues by remember { mutableStateOf<com.harmonic.player.data.TagEditor.TagValues?>(null) }
+    val tagWriteSecurityLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        val values = pendingTagValues
+        pendingTagValues = null
+        if (result.resultCode == android.app.Activity.RESULT_OK && values != null) {
+            scope.launch { saveTagsToFileAndDb(context, dao, song, values) }
+        } else if (values != null) {
+            android.widget.Toast.makeText(context, "Permissão negada — as tags não foram salvas", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Tenta gravar as tags no arquivo; se faltar permissão, pede na tela do sistema e tenta de novo depois. */
+    suspend fun saveTags(values: com.harmonic.player.data.TagEditor.TagValues) {
+        try {
+            saveTagsToFileAndDb(context, dao, song, values)
+        } catch (e: SecurityException) {
+            pendingTagValues = values
+            val intentSender = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.provider.MediaStore.createWriteRequest(context.contentResolver, listOf(songUri)).intentSender
+            } else {
+                (e as? android.app.RecoverableSecurityException)?.userAction?.actionIntent?.intentSender
+            }
+            if (intentSender != null) {
+                tagWriteSecurityLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(intentSender).build())
+            } else {
+                android.widget.Toast.makeText(context, "Não foi possível salvar as tags nesse arquivo", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     fun deleteSong() {
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
@@ -1470,59 +1698,58 @@ private fun SongOptionsSheet(
         }
     }
 
-    if (showActionSheet) {
-        ActionSheet(
-            onDismiss = { showActionSheet = false; onDismiss() },
-            title = song.title,
-            subtitle = song.artist,
-            items = listOf(
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.SkipNext, "Tocar em seguida") {
-                    showActionSheet = false; onPlayNext()
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
-                    showActionSheet = false; onAddToQueueEnd()
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlaylistAdd, "Adicionar à playlist") {
-                    showActionSheet = false; showPlaylistPicker = true
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.ContentCut, "Cortar") {
-                    showActionSheet = false; showTrimDialog = true
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Edit, "Renomear") {
-                    showActionSheet = false; showRenameDialog = true
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Info, "Editar tags (artista, álbum, gênero...)") {
-                    showActionSheet = false; showEditTagsDialog = true
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Image, "Mudar capa") {
-                    showActionSheet = false; coverPickerLauncher.launch(arrayOf("image/*"))
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.MusicNote, "Definir como toque de chamada") {
-                    showActionSheet = false; setAsRingtone(); onDismiss()
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Share, "Compartilhar") {
-                    showActionSheet = false; shareSong(); onDismiss()
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.DriveFileRenameOutline, "Editar nome do arquivo") {
-                    showActionSheet = false; showEditFileNameDialog = true
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Info, "Propriedades") {
-                    showActionSheet = false; showPropertiesDialog = true
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.VisibilityOff, "Ocultar música") {
-                    showActionSheet = false
-                    scope.launch { dao.setSongHidden(song.id, true) }
-                    onDismiss()
-                },
-                com.harmonic.player.ui.common.ActionSheetItem(
-                    Icons.Filled.Delete, "Excluir",
-                    tint = MaterialTheme.colorScheme.error
-                ) {
-                    showActionSheet = false; showDeleteConfirm = true
-                }
-            )
+    ActionSheet(
+        expanded = showActionSheet,
+        onDismiss = { showActionSheet = false; onDismiss() },
+        title = song.title,
+        subtitle = song.artist,
+        items = listOf(
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.SkipNext, "Tocar em seguida") {
+                showActionSheet = false; onPlayNext()
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
+                showActionSheet = false; onAddToQueueEnd()
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlaylistAdd, "Adicionar à playlist") {
+                showActionSheet = false; showPlaylistPicker = true
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.ContentCut, "Cortar") {
+                showActionSheet = false; showTrimDialog = true
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Edit, "Renomear") {
+                showActionSheet = false; showRenameDialog = true
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Info, "Editar tags (artista, álbum, gênero...)") {
+                showActionSheet = false; showEditTagsDialog = true
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Image, "Mudar capa") {
+                showActionSheet = false; coverPickerLauncher.launch(arrayOf("image/*"))
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.MusicNote, "Definir como toque de chamada") {
+                showActionSheet = false; setAsRingtone(); onDismiss()
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Share, "Compartilhar") {
+                showActionSheet = false; shareSong(); onDismiss()
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.DriveFileRenameOutline, "Editar nome do arquivo") {
+                showActionSheet = false; showEditFileNameDialog = true
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Info, "Propriedades") {
+                showActionSheet = false; showPropertiesDialog = true
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.VisibilityOff, "Ocultar música") {
+                showActionSheet = false
+                scope.launch { dao.setSongHidden(song.id, true) }
+                onDismiss()
+            },
+            com.harmonic.player.ui.common.ActionSheetItem(
+                Icons.Filled.Delete, "Excluir",
+                tint = MaterialTheme.colorScheme.error
+            ) {
+                showActionSheet = false; showDeleteConfirm = true
+            }
         )
-    }
+    )
 
     if (showPlaylistPicker) {
         val playlists by dao.getPlaylists().collectAsState(initial = emptyList())
@@ -1689,18 +1916,8 @@ private fun SongOptionsSheet(
                 TextButton(
                     enabled = !loading && title.isNotBlank(),
                     onClick = {
-                        scope.launch {
-                            val ok = com.harmonic.player.data.TagEditor.write(
-                                song.path,
-                                com.harmonic.player.data.TagEditor.TagValues(title, artist, album, genre, year, track)
-                            )
-                            if (ok) {
-                                dao.updateSongMetadata(
-                                    song.id, title.trim(), artist.trim(), album.trim(),
-                                    genre.trim().ifBlank { null }, track.trim().toIntOrNull()
-                                )
-                            }
-                        }
+                        val values = com.harmonic.player.data.TagEditor.TagValues(title, artist, album, genre, year, track)
+                        scope.launch { saveTags(values) }
                         showEditTagsDialog = false
                         onDismiss()
                     }
@@ -1863,4 +2080,28 @@ private fun formatDuration(ms: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+/**
+ * Grava as tags no arquivo de verdade e, se der certo, atualiza o registro
+ * no banco do app também — usada pelo diálogo "Editar tags". Deixa
+ * [SecurityException] escapar (não a engole) pra quem chama poder tratar o
+ * caso de faltar permissão de escrita (armazenamento com escopo).
+ */
+private suspend fun saveTagsToFileAndDb(
+    context: android.content.Context,
+    dao: com.harmonic.player.data.SongDao,
+    song: Song,
+    values: com.harmonic.player.data.TagEditor.TagValues
+) {
+    val ok = com.harmonic.player.data.TagEditor.write(song.path, values)
+    if (ok) {
+        dao.updateSongMetadata(
+            song.id, values.title.trim(), values.artist.trim(), values.album.trim(),
+            values.genre.trim().ifBlank { null }, values.trackNumber.trim().toIntOrNull()
+        )
+        android.widget.Toast.makeText(context, "Tags salvas no arquivo", android.widget.Toast.LENGTH_SHORT).show()
+    } else {
+        android.widget.Toast.makeText(context, "Não foi possível salvar as tags nesse arquivo", android.widget.Toast.LENGTH_LONG).show()
+    }
 }

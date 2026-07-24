@@ -12,17 +12,20 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.Playlist
 import com.harmonic.player.data.SongDao
 import com.harmonic.player.ui.common.ActionSheet
 import com.harmonic.player.ui.common.ActionSheetItem
 import com.harmonic.player.ui.common.SortMenuButton
 import com.harmonic.player.ui.common.SortOption
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private val playlistSortOptions = listOf(
@@ -34,13 +37,20 @@ private val playlistSortOptions = listOf(
 @Composable
 fun PlaylistsScreen(
     dao: SongDao,
+    playerController: com.harmonic.player.playback.PlayerController,
     onBack: () -> Unit,
-    onOpenPlaylist: (Long) -> Unit
+    onOpenPlaylist: (Long) -> Unit,
+    onOpenNowPlaying: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val playlists by dao.getPlaylists().collectAsState(initial = emptyList())
     var showCreateDialog by remember { mutableStateOf(false) }
-    var playlistForOptions by remember { mutableStateOf<Playlist?>(null) }
+    // Qual playlist está com um diálogo de renomear/excluir aberto — o menu
+    // de opções em si agora vive dentro de cada linha (perto do botão "⋮"),
+    // então esse estado só precisa cobrir os diálogos de continuação.
+    var playlistForDialog by remember { mutableStateOf<Playlist?>(null) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     var sortKey by remember { mutableStateOf("createdAt") }
     var sortAscending by remember { mutableStateOf(false) }
 
@@ -98,13 +108,33 @@ fun PlaylistsScreen(
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
                 items(sortedPlaylists, key = { it.id }) { playlist ->
+                    // Estado do menu vive aqui, na própria linha, pra o menu
+                    // suspenso abrir colado no botão "⋮" que o aciona, em vez
+                    // de flutuar solto no meio da tela.
+                    var showMenu by remember { mutableStateOf(false) }
+
                     ListItem(
                         leadingContent = { Icon(Icons.Filled.QueueMusic, contentDescription = null) },
                         headlineContent = { Text(playlist.name) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.clickable { onOpenPlaylist(playlist.id) },
+                        modifier = Modifier.padding(vertical = (-3).dp).clickable { onOpenPlaylist(playlist.id) },
                         trailingContent = {
                             Row {
+                                IconButton(onClick = {
+                                    scope.launch {
+                                        val songs = dao.getPlaylistSongs(playlist.id).first()
+                                        if (songs.isNotEmpty()) {
+                                            playerController.requestPlayQueue(songs, 0, "playlist:${playlist.id}", playlist.name)
+                                            onOpenNowPlaying()
+                                        }
+                                    }
+                                }) {
+                                    Icon(
+                                        Icons.Filled.PlayArrow,
+                                        contentDescription = "Tocar playlist",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 IconButton(onClick = {
                                     scope.launch { dao.setPlaylistFavorite(playlist.id, !playlist.isFavorite) }
                                 }) {
@@ -114,8 +144,30 @@ fun PlaylistsScreen(
                                         tint = if (playlist.isFavorite) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.6f)
                                     )
                                 }
-                                IconButton(onClick = { playlistForOptions = playlist }) {
-                                    Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
+                                Box {
+                                    IconButton(onClick = { showMenu = true }) {
+                                        Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
+                                    }
+                                    ActionSheet(
+                                        expanded = showMenu,
+                                        onDismiss = { showMenu = false },
+                                        title = playlist.name,
+                                        items = listOf(
+                                            ActionSheetItem(Icons.Filled.Edit, "Renomear") {
+                                                showMenu = false
+                                                playlistForDialog = playlist
+                                                showRenameDialog = true
+                                            },
+                                            ActionSheetItem(
+                                                Icons.Filled.Delete, "Excluir",
+                                                tint = MaterialTheme.colorScheme.error
+                                            ) {
+                                                showMenu = false
+                                                playlistForDialog = playlist
+                                                showDeleteConfirm = true
+                                            }
+                                        )
+                                    )
                                 }
                             }
                         }
@@ -155,29 +207,11 @@ fun PlaylistsScreen(
         )
     }
 
-    playlistForOptions?.let { playlist ->
-        var showRenameDialog by remember { mutableStateOf(false) }
-        var showDeleteConfirm by remember { mutableStateOf(false) }
-        var showSheet by remember { mutableStateOf(true) }
-
-        if (showSheet) {
-            ActionSheet(
-                onDismiss = { showSheet = false; playlistForOptions = null },
-                title = playlist.name,
-                items = listOf(
-                    ActionSheetItem(Icons.Filled.Edit, "Renomear") { showSheet = false; showRenameDialog = true },
-                    ActionSheetItem(
-                        Icons.Filled.Delete, "Excluir",
-                        tint = MaterialTheme.colorScheme.error
-                    ) { showSheet = false; showDeleteConfirm = true }
-                )
-            )
-        }
-
+    playlistForDialog?.let { playlist ->
         if (showRenameDialog) {
             var newName by remember { mutableStateOf(playlist.name) }
             AlertDialog(
-                onDismissRequest = { showRenameDialog = false; playlistForOptions = null },
+                onDismissRequest = { showRenameDialog = false; playlistForDialog = null },
                 title = { Text("Renomear playlist") },
                 text = {
                     OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true)
@@ -188,30 +222,30 @@ fun PlaylistsScreen(
                         onClick = {
                             scope.launch { dao.renamePlaylist(playlist.id, newName.trim()) }
                             showRenameDialog = false
-                            playlistForOptions = null
+                            playlistForDialog = null
                         }
                     ) { Text("Salvar") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showRenameDialog = false; playlistForOptions = null }) { Text("Cancelar") }
+                    TextButton(onClick = { showRenameDialog = false; playlistForDialog = null }) { Text("Cancelar") }
                 }
             )
         }
 
         if (showDeleteConfirm) {
             AlertDialog(
-                onDismissRequest = { showDeleteConfirm = false; playlistForOptions = null },
+                onDismissRequest = { showDeleteConfirm = false; playlistForDialog = null },
                 title = { Text("Excluir playlist?") },
                 text = { Text("\"${playlist.name}\" será excluída. As músicas continuam na sua biblioteca.") },
                 confirmButton = {
                     TextButton(onClick = {
                         scope.launch { dao.deletePlaylist(playlist.id) }
                         showDeleteConfirm = false
-                        playlistForOptions = null
+                        playlistForDialog = null
                     }) { Text("Excluir", color = MaterialTheme.colorScheme.error) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDeleteConfirm = false; playlistForOptions = null }) { Text("Cancelar") }
+                    TextButton(onClick = { showDeleteConfirm = false; playlistForDialog = null }) { Text("Cancelar") }
                 }
             )
         }

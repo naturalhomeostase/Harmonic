@@ -76,7 +76,7 @@ fun HiddenFoldersScreen(database: MusicDatabase, onBack: () -> Unit) {
                         Text(folder, color = Color.White.copy(alpha = if (isHidden) 0.3f else 0.55f))
                     },
                     trailingContent = {
-                        Switch(
+                        com.harmonic.player.ui.common.ThemedSwitch(
                             checked = !isHidden,
                             onCheckedChange = { visible ->
                                 scope.launch {
