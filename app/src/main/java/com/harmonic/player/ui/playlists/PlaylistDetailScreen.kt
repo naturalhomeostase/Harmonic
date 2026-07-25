@@ -52,6 +52,10 @@ fun PlaylistDetailScreen(
 
     var showAddSongsDialog by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
+    // Fora do modo de edição, a lista fica limpa (igual a página de
+    // Músicas) — os ícones de arrastar/remover só aparecem depois de tocar
+    // em "Editar playlist" no menu, pra não poluir a lista à toa.
+    var editMode by remember { mutableStateOf(false) }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -74,6 +78,7 @@ fun PlaylistDetailScreen(
         onOpenNowPlaying()
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -92,6 +97,14 @@ fun PlaylistDetailScreen(
                         Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções", tint = Color.White)
                     }
                     com.harmonic.player.ui.common.ThemedDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text(if (editMode) "Concluir edição" else "Editar playlist") },
+                            leadingIcon = { Icon(if (editMode) Icons.Filled.Check else Icons.Filled.Edit, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                editMode = !editMode
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Exportar como M3U") },
                             onClick = {
@@ -191,6 +204,7 @@ fun PlaylistDetailScreen(
                 ) {
                     localOrder.forEachIndexed { index, song ->
                         val isDragging = index == draggingIndex
+                        val isCurrentlyPlaying = isThisPlaylistActive && playbackState.currentSong?.id == song.id
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -198,45 +212,58 @@ fun PlaylistDetailScreen(
                                 .graphicsLayer { translationY = if (isDragging) dragOffsetY else 0f }
                                 .zIndex(if (isDragging) 1f else 0f)
                                 .background(if (isDragging) Color.White.copy(alpha = 0.06f) else Color.Transparent)
-                                .clickable { play(localOrder, index) },
+                                .clickable { play(localOrder, index) }
+                                .padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Filled.DragHandle,
-                                contentDescription = "Arrastar pra reordenar",
-                                tint = Color.White.copy(alpha = 0.4f),
-                                modifier = Modifier
-                                    .padding(horizontal = 12.dp)
-                                    .pointerInput(song.id) {
-                                        detectDragGesturesAfterLongPress(
-                                            onDragStart = {
-                                                draggingIndex = localOrder.indexOf(song)
-                                                dragOffsetY = 0f
-                                            },
-                                            onDragEnd = {
-                                                draggingIndex = -1
-                                                dragOffsetY = 0f
-                                                scope.launch { dao.updatePlaylistOrder(playlistId, localOrder.map { it.id }) }
-                                            },
-                                            onDragCancel = { draggingIndex = -1; dragOffsetY = 0f }
-                                        ) { change, delta ->
-                                            change.consume()
-                                            dragOffsetY += delta.y
-                                            val current = draggingIndex
-                                            if (current == -1) return@detectDragGesturesAfterLongPress
-                                            val steps = (dragOffsetY / rowHeightPx).roundToInt()
-                                            val targetIndex = (current + steps).coerceIn(0, localOrder.lastIndex)
-                                            if (targetIndex != current) {
-                                                val mutable = localOrder.toMutableList()
-                                                val moved = mutable.removeAt(current)
-                                                mutable.add(targetIndex, moved)
-                                                localOrder = mutable
-                                                dragOffsetY -= (targetIndex - current) * rowHeightPx
-                                                draggingIndex = targetIndex
+                            // O ícone de arrastar (reordenar) só aparece no
+                            // modo de edição — fora dele, a lista fica igual
+                            // à página de Músicas, sem esses ícones extras.
+                            if (editMode) {
+                                Icon(
+                                    Icons.Filled.DragHandle,
+                                    contentDescription = "Arrastar pra reordenar",
+                                    tint = Color.White.copy(alpha = 0.4f),
+                                    modifier = Modifier
+                                        .padding(end = 8.dp)
+                                        .pointerInput(song.id) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = {
+                                                    draggingIndex = localOrder.indexOf(song)
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragEnd = {
+                                                    draggingIndex = -1
+                                                    dragOffsetY = 0f
+                                                    scope.launch { dao.updatePlaylistOrder(playlistId, localOrder.map { it.id }) }
+                                                },
+                                                onDragCancel = { draggingIndex = -1; dragOffsetY = 0f }
+                                            ) { change, delta ->
+                                                change.consume()
+                                                dragOffsetY += delta.y
+                                                val current = draggingIndex
+                                                if (current == -1) return@detectDragGesturesAfterLongPress
+                                                val steps = (dragOffsetY / rowHeightPx).roundToInt()
+                                                val targetIndex = (current + steps).coerceIn(0, localOrder.lastIndex)
+                                                if (targetIndex != current) {
+                                                    val mutable = localOrder.toMutableList()
+                                                    val moved = mutable.removeAt(current)
+                                                    mutable.add(targetIndex, moved)
+                                                    localOrder = mutable
+                                                    dragOffsetY -= (targetIndex - current) * rowHeightPx
+                                                    draggingIndex = targetIndex
+                                                }
                                             }
                                         }
-                                    }
+                                )
+                            }
+                            com.harmonic.player.ui.common.AlbumArt(
+                                song = song,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
                             )
+                            Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
                                 Text(
@@ -247,10 +274,31 @@ fun PlaylistDetailScreen(
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
-                            IconButton(onClick = {
-                                scope.launch { dao.removeFromPlaylist(playlistId, song.id) }
-                            }) {
-                                Icon(Icons.Filled.Close, contentDescription = "Remover da playlist", tint = Color.White.copy(alpha = 0.7f))
+                            // Indicador de "tocando agora" — igual à página
+                            // de Músicas, pra dar consistência visual.
+                            if (isCurrentlyPlaying && playbackState.isPlaying) {
+                                com.harmonic.player.ui.library.AnimatedEqualizerBars(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            IconButton(onClick = { scope.launch { dao.setFavorite(song.id, !song.isFavorite) } }) {
+                                Icon(
+                                    if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    contentDescription = "Favoritar",
+                                    tint = if (song.isFavorite) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.7f)
+                                )
+                            }
+                            // O botão de remover também só aparece no modo
+                            // de edição — evita remover uma música sem
+                            // querer com um toque solto na lista normal.
+                            if (editMode) {
+                                IconButton(onClick = {
+                                    scope.launch { dao.removeFromPlaylist(playlistId, song.id) }
+                                }) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Remover da playlist", tint = Color.White.copy(alpha = 0.7f))
+                                }
                             }
                         }
                     }
@@ -260,10 +308,10 @@ fun PlaylistDetailScreen(
     }
 
     if (showAddSongsDialog) {
-        AddSongsDialog(
+        AddSongsFullScreen(
             dao = dao,
             alreadyInPlaylist = songs.map { it.id }.toSet(),
-            onDismiss = { showAddSongsDialog = false },
+            onBack = { showAddSongsDialog = false },
             onConfirm = { selected ->
                 scope.launch {
                     var position = songs.size
@@ -277,65 +325,103 @@ fun PlaylistDetailScreen(
             }
         )
     }
+    }
 }
 
+/**
+ * Página cheia (não uma caixa de diálogo) pra escolher quais músicas
+ * entram na playlist — visual parecido com a página de Músicas, com busca
+ * no topo e checkbox em cada linha, e uma barra inferior com o botão de
+ * confirmar já mostrando quantas foram selecionadas.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddSongsDialog(
+private fun AddSongsFullScreen(
     dao: SongDao,
     alreadyInPlaylist: Set<Long>,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
     onConfirm: (List<Song>) -> Unit
 ) {
     val allSongs by dao.getAllSongs().collectAsState(initial = emptyList())
-    val selected = remember { mutableStateListOf<Song>() }
+    val selected = remember { mutableStateListOf<Long>() }
     var query by remember { mutableStateOf("") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Adicionar músicas") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text("Buscar...") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                val filtered = allSongs.filter {
-                    it.id !in alreadyInPlaylist &&
-                        (query.isBlank() || it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true))
-                }
-                LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                    items(filtered, key = { it.id }) { song ->
-                        val isSelected = song in selected
-                        ListItem(
-                            headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            trailingContent = {
-                                Checkbox(
-                                    checked = isSelected,
-                                    onCheckedChange = { checked ->
-                                        if (checked) selected.add(song) else selected.remove(song)
-                                    }
-                                )
-                            },
-                            modifier = Modifier.clickable {
-                                if (isSelected) selected.remove(song) else selected.add(song)
-                            }
-                        )
+    val filtered = remember(allSongs, query) {
+        allSongs.filter {
+            it.id !in alreadyInPlaylist &&
+                (query.isBlank() || it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true))
+        }
+    }
+
+    Scaffold(
+        containerColor = Color.Transparent,
+        topBar = {
+            TopAppBar(
+                title = {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("Buscar músicas, artistas...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Cancelar", tint = Color.White)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        bottomBar = {
+            if (selected.isNotEmpty()) {
+                Surface(color = Color.Transparent) {
+                    Button(
+                        onClick = { onConfirm(allSongs.filter { it.id in selected }) },
+                        modifier = Modifier.fillMaxWidth().padding(16.dp)
+                    ) {
+                        Text("Adicionar ${selected.size} música${if (selected.size == 1) "" else "s"}")
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(enabled = selected.isNotEmpty(), onClick = { onConfirm(selected.toList()) }) {
-                Text("Adicionar (${selected.size})")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancelar") }
         }
-    )
+    ) { padding ->
+        if (filtered.isEmpty()) {
+            Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    if (allSongs.isEmpty()) "Nenhuma música na biblioteca ainda" else "Todas as músicas já estão nessa playlist (ou nenhuma bate com a busca)",
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+            return@Scaffold
+        }
+        LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
+            items(filtered, key = { it.id }) { song ->
+                val isSelected = song.id in selected
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = {
+                        com.harmonic.player.ui.common.AlbumArt(
+                            song = song,
+                            modifier = Modifier.size(44.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        )
+                    },
+                    headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White) },
+                    supportingContent = { Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.6f)) },
+                    trailingContent = {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { checked ->
+                                if (checked) selected.add(song.id) else selected.remove(song.id)
+                            }
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        if (isSelected) selected.remove(song.id) else selected.add(song.id)
+                    }
+                )
+            }
+        }
+    }
 }

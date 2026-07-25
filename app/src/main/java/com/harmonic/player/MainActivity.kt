@@ -294,11 +294,18 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
                 musicRepository = app.musicRepository,
                 onBack = { navController.popBackStack() },
                 onOpenTheme = { navController.navigate("appearance") },
-                onOpenHiddenFolders = { navController.navigate("hidden_folders") }
+                onOpenHiddenFolders = { navController.navigate("hidden_folders") },
+                onOpenHiddenSongs = { navController.navigate("hidden_songs") }
             )
         }
         composable("hidden_folders") {
             com.harmonic.player.ui.settings.HiddenFoldersScreen(
+                database = app.database,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("hidden_songs") {
+            com.harmonic.player.ui.settings.HiddenSongsScreen(
                 database = app.database,
                 onBack = { navController.popBackStack() }
             )

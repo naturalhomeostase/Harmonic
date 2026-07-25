@@ -105,16 +105,37 @@ fun MiniPlayer(
             }
 
             // Botões com no mínimo 48dp de área de toque (tamanho recomendado
-            // pelo Material Design), mesmo que o ícone visual seja menor
-            IconButton(onClick = onTogglePlayPause, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    imageVector = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (state.isPlaying) "Pausar" else "Tocar",
-                    tint = Color.White
+            // pelo Material Design), mesmo que o ícone visual seja menor.
+            // Cor de destaque + um brilho suave atrás — ajuda o mini player
+            // a se destacar um pouco da lista de músicas logo acima dele.
+            val accent = MaterialTheme.colorScheme.primary
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            Brush.radialGradient(listOf(accent.copy(alpha = 0.4f), Color.Transparent))
+                        )
                 )
+                IconButton(onClick = onTogglePlayPause, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        imageVector = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (state.isPlaying) "Pausar" else "Tocar",
+                        tint = accent
+                    )
+                }
             }
-            IconButton(onClick = onSkipNext, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Filled.SkipNext, contentDescription = "Próxima", tint = Color.White.copy(alpha = 0.9f))
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(
+                            Brush.radialGradient(listOf(accent.copy(alpha = 0.25f), Color.Transparent))
+                        )
+                )
+                IconButton(onClick = onSkipNext, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.SkipNext, contentDescription = "Próxima", tint = accent.copy(alpha = 0.9f))
+                }
             }
         }
     }

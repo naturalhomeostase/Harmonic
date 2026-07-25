@@ -87,6 +87,12 @@ interface SongDao {
     @Query("UPDATE songs SET isHidden = :hidden WHERE id = :songId")
     suspend fun setSongHidden(songId: Long, hidden: Boolean)
 
+    @Query("UPDATE songs SET isHidden = 1 WHERE albumId = :albumId")
+    suspend fun hideSongsByAlbum(albumId: Long)
+
+    @Query("SELECT * FROM songs WHERE isHidden = 1 ORDER BY title COLLATE NOCASE ASC")
+    fun getHiddenSongs(): Flow<List<Song>>
+
     @Query("UPDATE songs SET title = :title WHERE id = :songId")
     suspend fun renameSong(songId: Long, title: String)
 

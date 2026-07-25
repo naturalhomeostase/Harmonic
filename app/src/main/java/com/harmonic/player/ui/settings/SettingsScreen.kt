@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FolderOff
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
@@ -37,7 +38,8 @@ fun SettingsScreen(
     musicRepository: MusicRepository,
     onBack: () -> Unit,
     onOpenTheme: () -> Unit,
-    onOpenHiddenFolders: () -> Unit
+    onOpenHiddenFolders: () -> Unit,
+    onOpenHiddenSongs: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val albumGridView by settings.albumGridView.collectAsState(initial = false)
@@ -99,6 +101,13 @@ fun SettingsScreen(
                 title = "Pastas ocultas",
                 subtitle = "Escolha quais pastas ficam de fora da biblioteca",
                 onClick = onOpenHiddenFolders
+            )
+
+            SettingsRow(
+                icon = Icons.Filled.VisibilityOff,
+                title = "Músicas ocultas",
+                subtitle = "Veja e reexiba músicas ocultadas individualmente (ou álbuns inteiros)",
+                onClick = onOpenHiddenSongs
             )
 
             SettingsRow(

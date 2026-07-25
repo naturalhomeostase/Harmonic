@@ -50,9 +50,19 @@ class MusicRepository(
         // reproduções, última vez tocada e posição salva — sem isso, cada
         // re-scan "resetaria" essas informações mesmo a música sendo a
         // mesma (só o `REPLACE` do SQLite recriando a linha do zero).
-        val existingByMediaStoreId = dao.getAllSongsOnce().associateBy { it.mediaStoreId }
+        val existingSongs = dao.getAllSongsOnce()
+        val existingByMediaStoreId = existingSongs.associateBy { it.mediaStoreId }
+        // Casar só pelo ID do MediaStore não é suficiente: pedir pro
+        // Android reindexar um arquivo que a gente acabou de editar (tags)
+        // às vezes faz o MediaStore recriar a linha dele com um _id NOVO —
+        // aí a busca acima não encontrava a música "existente", tratava
+        // como uma música nova (com os dados antigos, ainda em cache) e
+        // literalmente apagava a linha certa (com a edição) por baixo.
+        // Casando também pelo caminho do arquivo (bem mais estável),
+        // reconhecemos que é a mesma música mesmo com o _id tendo mudado.
+        val existingByPath = existingSongs.associateBy { it.path }
         val merged = scanned.map { fresh ->
-            val existing = existingByMediaStoreId[fresh.mediaStoreId]
+            val existing = existingByMediaStoreId[fresh.mediaStoreId] ?: existingByPath[fresh.path]
             if (existing != null) {
                 fresh.copy(
                     id = existing.id,
@@ -81,8 +91,16 @@ class MusicRepository(
         }
 
         val currentIds = merged.map { it.mediaStoreId }.toSet()
+        // Pela mesma razão acima: uma música cujo _id do MediaStore mudou
+        // não pode ser considerada "removida" — ela já foi reaproveitada
+        // (pelo caminho) na linha mesclada acima, então tirá-la daqui pelo
+        // caminho evita apagar por engano essa mesma linha logo em seguida.
+        val currentPaths = merged.map { it.path }.toSet()
         val removed = existingByMediaStoreId.keys - currentIds
-        if (removed.isNotEmpty()) dao.deleteByMediaStoreIds(removed.toList())
+        val removedIds = existingSongs
+            .filter { it.mediaStoreId in removed && it.path !in currentPaths }
+            .map { it.mediaStoreId }
+        if (removedIds.isNotEmpty()) dao.deleteByMediaStoreIds(removedIds)
 
         dao.insertAll(merged)
     }

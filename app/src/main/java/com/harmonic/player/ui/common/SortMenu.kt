@@ -1,5 +1,7 @@
 package com.harmonic.player.ui.common
 
+import androidx.compose.foundation.layout.padding
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -16,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 /** Uma opção de ordenação — [key] é um identificador interno estável, [label] é o texto mostrado. */
 data class SortOption(val key: String, val label: String)
@@ -41,6 +44,13 @@ fun SortMenuButton(
     }
 
     ThemedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        androidx.compose.material3.Text(
+            "Ordenar por",
+            style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
+            color = Color.White.copy(alpha = 0.6f),
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+        HorizontalDivider()
         options.forEach { option ->
             DropdownMenuItem(
                 text = { Text(option.label) },
