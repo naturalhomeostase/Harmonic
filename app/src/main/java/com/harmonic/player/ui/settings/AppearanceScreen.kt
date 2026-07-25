@@ -82,6 +82,12 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                     // Mesma lógica dos temas prontos: a cor de destaque passa a
                     // combinar com a foto escolhida da galeria automaticamente.
                     accentFromUri(context, savedPath)?.let { settings.setAccentColor(it.toArgb()) }
+                    // O mesmo vale pro gradiente dos títulos, se o usuário
+                    // tiver ativado essa opção — nada de pedir pra escolher
+                    // as cores na mão, igual já fazemos com a cor de destaque.
+                    titleGradientFromUri(context, savedPath)?.let { (start, end) ->
+                        settings.setTitleGradientColors(start.toArgb(), end.toArgb())
+                    }
                 }
             }
         }
@@ -242,6 +248,9 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                                     // cor preferida continua disponível acima,
                                     // bastando tocar nela depois pra sobrescrever.
                                     settings.setAccentColor(accentFromGradient(theme).toArgb())
+                                    // Idem pro gradiente dos títulos.
+                                    val (start, end) = titleGradientFromGradientTheme(theme)
+                                    settings.setTitleGradientColors(start.toArgb(), end.toArgb())
                                 }
                             },
                         contentAlignment = Alignment.BottomStart
@@ -283,6 +292,10 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                                     // de destaque com o fundo escolhido.
                                     accentFromAsset(context, wallpaper.assetPath)?.let {
                                         settings.setAccentColor(it.toArgb())
+                                    }
+                                    // Idem pro gradiente dos títulos.
+                                    titleGradientFromAsset(context, wallpaper.assetPath)?.let { (start, end) ->
+                                        settings.setTitleGradientColors(start.toArgb(), end.toArgb())
                                     }
                                 }
                             }
@@ -397,8 +410,9 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
             if (titleGradientEnabled) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Por padrão usa as duas primeiras cores do tema selecionado acima. " +
-                    "Toque numa bolinha pra escolher qualquer cor livremente, ou em \"Usar cores do tema\" pra voltar ao padrão.",
+                    "Por padrão, combina automaticamente com o fundo escolhido acima " +
+                    "(tema, papel de parede ou foto) — igual já acontece com a cor de destaque. " +
+                    "Toque numa bolinha pra escolher qualquer cor livremente, ou em \"Usar cores automáticas\" pra voltar ao padrão.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -435,8 +449,24 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 }
 
                 if (titleGradientColorStart != null || titleGradientColorEnd != null) {
-                    TextButton(onClick = { scope.launch { settings.clearTitleGradientColors() } }) {
-                        Text("Usar cores do tema")
+                    TextButton(onClick = {
+                        scope.launch {
+                            val auto = when {
+                                currentCustomBg != null -> titleGradientFromUri(context, currentCustomBg!!)
+                                currentWallpaper != null -> titleGradientFromAsset(
+                                    context,
+                                    com.harmonic.player.data.DefaultWallpaper.valueOf(currentWallpaper!!).assetPath
+                                )
+                                else -> titleGradientFromGradientTheme(activeTheme)
+                            }
+                            if (auto != null) {
+                                settings.setTitleGradientColors(auto.first.toArgb(), auto.second.toArgb())
+                            } else {
+                                settings.clearTitleGradientColors()
+                            }
+                        }
+                    }) {
+                        Text("Usar cores automáticas")
                     }
                 }
 
@@ -646,6 +676,55 @@ private fun CustomColorPickerDialog(
  */
 private fun adjustAccentForReadability(color: Color): Color =
     if (color.luminance() < 0.35f) lerp(color, Color.White, 0.35f) else color
+
+/**
+ * Extrai DUAS cores (pra combinar com [SettingsRepository.setTitleGradientColors])
+ * a partir de um bitmap — mesma ideia da extração da cor de destaque única
+ * ([extractAccentFromBitmap]), só que pegando dois tons vibrantes
+ * diferentes pra formar um gradiente que combine com o fundo escolhido.
+ */
+private fun extractTitleGradientFromBitmap(bitmap: Bitmap): Pair<Color, Color>? = try {
+    val palette = androidx.palette.graphics.Palette.from(bitmap).generate()
+    val start = palette.vibrantSwatch ?: palette.lightVibrantSwatch
+        ?: palette.dominantSwatch ?: palette.mutedSwatch
+    val end = palette.lightVibrantSwatch?.takeIf { it.rgb != start?.rgb }
+        ?: palette.darkVibrantSwatch?.takeIf { it.rgb != start?.rgb }
+        ?: palette.mutedSwatch?.takeIf { it.rgb != start?.rgb }
+        ?: start
+    if (start == null || end == null) null
+    else adjustAccentForReadability(Color(start.rgb)) to adjustAccentForReadability(Color(end.rgb))
+} catch (e: Exception) {
+    null
+}
+
+/** Título em gradiente pra uma imagem de assets/ (temas prontos). */
+private suspend fun titleGradientFromAsset(context: android.content.Context, assetPath: String): Pair<Color, Color>? =
+    withContext(Dispatchers.IO) {
+        try {
+            context.assets.open(assetPath).use { input ->
+                BitmapFactory.decodeStream(input)?.let { extractTitleGradientFromBitmap(it) }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+/** Título em gradiente pra uma imagem já salva no armazenamento interno (foto da galeria). */
+private suspend fun titleGradientFromUri(context: android.content.Context, uriString: String): Pair<Color, Color>? =
+    withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.openInputStream(Uri.parse(uriString))?.use { input ->
+                BitmapFactory.decodeStream(input)?.let { extractTitleGradientFromBitmap(it) }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+/** Título em gradiente pra um tema de gradiente pronto — usa as pontas dele. */
+private fun titleGradientFromGradientTheme(theme: com.harmonic.player.data.GradientTheme): Pair<Color, Color> =
+    adjustAccentForReadability(Color(theme.colorsArgb.first())) to
+        adjustAccentForReadability(Color(theme.colorsArgb.last()))
 
 /**
  * Extrai uma cor de destaque "vibrante" de um bitmap com a Palette API —

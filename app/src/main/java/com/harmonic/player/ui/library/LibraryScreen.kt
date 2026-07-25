@@ -83,19 +83,22 @@ private val songSortOptions = listOf(
     com.harmonic.player.ui.common.SortOption("title", "Título"),
     com.harmonic.player.ui.common.SortOption("artist", "Artista"),
     com.harmonic.player.ui.common.SortOption("duration", "Duração"),
-    com.harmonic.player.ui.common.SortOption("dateAdded", "Data adicionada")
+    com.harmonic.player.ui.common.SortOption("dateAdded", "Data adicionada"),
+    com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas")
 )
 
 private val albumSortOptions = listOf(
     com.harmonic.player.ui.common.SortOption("album", "Álbum"),
     com.harmonic.player.ui.common.SortOption("artist", "Artista"),
-    com.harmonic.player.ui.common.SortOption("trackCount", "Nº de faixas")
+    com.harmonic.player.ui.common.SortOption("trackCount", "Nº de faixas"),
+    com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas")
 )
 
 private val artistSortOptions = listOf(
     com.harmonic.player.ui.common.SortOption("name", "Nome"),
     com.harmonic.player.ui.common.SortOption("songCount", "Nº de músicas"),
-    com.harmonic.player.ui.common.SortOption("albumCount", "Nº de álbuns")
+    com.harmonic.player.ui.common.SortOption("albumCount", "Nº de álbuns"),
+    com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas")
 )
 
 private val playlistSortOptions = listOf(
@@ -458,6 +461,7 @@ fun LibraryScreen(
                             "artist" -> songs.sortedBy { it.artist.lowercase() }
                             "duration" -> songs.sortedBy { it.durationMs }
                             "dateAdded" -> songs.sortedBy { it.dateAdded }
+                            "playCount" -> songs.sortedBy { it.playCount }
                             else -> songs.sortedBy { it.title.lowercase() }
                         }
                         if (sortAscending) base else base.reversed()
@@ -494,6 +498,7 @@ fun LibraryScreen(
                         val base = when (artistSortKey) {
                             "songCount" -> artistSummariesRaw.sortedBy { it.songCount }
                             "albumCount" -> artistSummariesRaw.sortedBy { it.albumCount }
+                            "playCount" -> artistSummariesRaw.sortedBy { it.playCount }
                             else -> artistSummariesRaw.sortedBy { it.name.lowercase() }
                         }
                         if (artistSortAscending) base else base.reversed()
@@ -585,6 +590,7 @@ fun LibraryScreen(
                         val base = when (albumSortKey) {
                             "artist" -> albumsRaw.sortedBy { it.artist.lowercase() }
                             "trackCount" -> albumsRaw.sortedBy { it.trackCount }
+                            "playCount" -> albumsRaw.sortedBy { it.playCount }
                             else -> albumsRaw.sortedBy { it.album.lowercase() }
                         }
                         if (albumSortAscending) base else base.reversed()
@@ -612,11 +618,29 @@ fun LibraryScreen(
                     } else {
                         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
                             items(albums, key = { it.albumId }) { album ->
+                                val representativeSong by produceState<Song?>(initialValue = null, key1 = album.representativeSongId) {
+                                    value = dao.getSongById(album.representativeSongId)
+                                }
                                 ListItem(
+                                    leadingContent = {
+                                        com.harmonic.player.ui.common.AlbumArt(
+                                            song = representativeSong,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                        )
+                                    },
                                     headlineContent = { Text(album.album, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White) },
-                                    supportingContent = { Text(album.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.55f)) },
+                                    supportingContent = {
+                                        Text(
+                                            "${album.artist} • ${album.trackCount} música${if (album.trackCount == 1) "" else "s"}",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = Color.White.copy(alpha = 0.55f)
+                                        )
+                                    },
                                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                    modifier = Modifier.clickable {
+                                    modifier = Modifier.compactVertical(4.dp).clickable {
                                         drilledGroup = album.album
                                         drilledAlbumId = album.albumId
                                         drilledAlbumArtist = album.artist
@@ -656,7 +680,10 @@ fun LibraryScreen(
                                     scope.launch { dao.setAlbumFavorite(albumId, !isFavAlbum) }
                                 },
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Edit, "Renomear") {
-                                    renameAlbumTarget = AlbumSummary(albumName, albumId, drilledAlbumArtist, songs.size)
+                                    renameAlbumTarget = AlbumSummary(
+                                        albumName, albumId, drilledAlbumArtist, songs.size,
+                                        songs.sumOf { it.playCount }, songs.firstOrNull()?.id ?: 0L
+                                    )
                                 },
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Share, "Compartilhar") {
                                     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -1251,6 +1278,13 @@ private fun AlbumGridCell(album: AlbumSummary, dao: SongDao, onClick: () -> Unit
             color = Color.White.copy(alpha = 0.55f),
             style = MaterialTheme.typography.labelSmall
         )
+        Text(
+            "${album.trackCount} música${if (album.trackCount == 1) "" else "s"}",
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = Color.White.copy(alpha = 0.4f),
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }
 
@@ -1461,29 +1495,18 @@ private fun SongRow(
         leadingContent = {
             // Clique longo em qualquer parte da linha entra no "modo
             // seleção" (barra de ações no topo pra fila/favoritos/
-            // playlist) e mostra um checkbox do lado da capa — enquanto
-            // esse modo estiver ativo, tocar na linha marca/desmarca em
-            // vez de tocar a música.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (selectionMode) {
-                    Checkbox(
-                        checked = isSelected,
-                        onCheckedChange = { onToggleSelect() },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = accentColor,
-                            uncheckedColor = Color.White.copy(alpha = 0.5f)
-                        )
-                    )
-                }
-                Box(contentAlignment = Alignment.Center) {
-                    com.harmonic.player.ui.common.AlbumArt(
-                        song = song,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                            .clickable(onClick = onToggleSelect)
-                    )
-                    if (isSelected) {
+            // playlist) — um "check" verde some por cima da capa quando
+            // selecionada, e enquanto esse modo estiver ativo, tocar na
+            // linha marca/desmarca em vez de tocar a música.
+            Box(contentAlignment = Alignment.Center) {
+                com.harmonic.player.ui.common.AlbumArt(
+                    song = song,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .clickable(onClick = onToggleSelect)
+                )
+                if (isSelected) {
                     Box(
                         modifier = Modifier
                             .size(48.dp)
@@ -1496,7 +1519,6 @@ private fun SongRow(
                         tint = accentColor,
                         modifier = Modifier.size(24.dp)
                     )
-                }
                 }
             }
         },
@@ -2155,6 +2177,11 @@ private suspend fun saveTagsToFileAndDb(
             song.id, values.title.trim(), values.artist.trim(), values.album.trim(),
             values.genre.trim().ifBlank { null }, values.trackNumber.trim().toIntOrNull()
         )
+        // Avisa o MediaStore que esse arquivo mudou (a gente escreveu nele
+        // direto pelo sistema de arquivos, então o MediaStore ainda não
+        // sabe) — sem isso, outros apps (gerenciador de arquivos, etc)
+        // continuariam vendo as tags antigas.
+        android.media.MediaScannerConnection.scanFile(context, arrayOf(song.path), null, null)
         android.widget.Toast.makeText(context, "Tags salvas no arquivo", android.widget.Toast.LENGTH_SHORT).show()
     } else {
         android.widget.Toast.makeText(context, "Não foi possível salvar as tags nesse arquivo", android.widget.Toast.LENGTH_LONG).show()

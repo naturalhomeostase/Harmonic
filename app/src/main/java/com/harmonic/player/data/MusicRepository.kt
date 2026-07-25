@@ -56,10 +56,18 @@ class MusicRepository(
             if (existing != null) {
                 fresh.copy(
                     id = existing.id,
-                    // Título preservado: uma vez que a música existe no
-                    // banco, ela vira a fonte da verdade — sem isso, usar
-                    // "Renomear" seria resetado no próximo re-scan.
+                    // O MediaStore só reflete as tags editadas pelo app
+                    // depois de um rescan do sistema — até lá, ele ainda
+                    // tem os valores antigos em cache. Preservando esses
+                    // campos a partir do banco (uma vez que a música
+                    // existe nele, ele vira a fonte da verdade, igual já
+                    // acontecia só com o título), a edição de tags não é
+                    // mais desfeita no próximo escaneamento automático.
                     title = existing.title,
+                    artist = existing.artist,
+                    album = existing.album,
+                    genre = existing.genre,
+                    trackNumber = existing.trackNumber,
                     isFavorite = existing.isFavorite,
                     playCount = existing.playCount,
                     lastPlayedAt = existing.lastPlayedAt,

@@ -23,7 +23,7 @@ interface SongDao {
     fun getArtists(): Flow<List<String>>
 
     @Query("""
-        SELECT artist AS name, COUNT(*) AS songCount, COUNT(DISTINCT albumId) AS albumCount
+        SELECT artist AS name, COUNT(*) AS songCount, COUNT(DISTINCT albumId) AS albumCount, SUM(playCount) AS playCount
         FROM songs
         WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0
         GROUP BY artist
@@ -37,7 +37,13 @@ interface SongDao {
     @Query("SELECT * FROM songs WHERE artist = :artist AND folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY album, trackNumber")
     fun getSongsByArtist(artist: String): Flow<List<Song>>
 
-    @Query("SELECT album, albumId, artist, COUNT(*) AS trackCount FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 GROUP BY albumId ORDER BY album COLLATE NOCASE ASC")
+    @Query("""
+        SELECT album, albumId, artist, COUNT(*) AS trackCount, SUM(playCount) AS playCount, MIN(id) AS representativeSongId
+        FROM songs
+        WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0
+        GROUP BY albumId
+        ORDER BY album COLLATE NOCASE ASC
+    """)
     fun getAlbums(): Flow<List<AlbumSummary>>
 
     @Query("SELECT * FROM songs WHERE albumId = :albumId AND folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY trackNumber")
@@ -220,6 +226,6 @@ interface SongDao {
     suspend fun deleteBookmark(bookmarkId: Long)
 }
 
-data class AlbumSummary(val album: String, val albumId: Long, val artist: String, val trackCount: Int)
+data class AlbumSummary(val album: String, val albumId: Long, val artist: String, val trackCount: Int, val playCount: Int, val representativeSongId: Long)
 
-data class ArtistSummary(val name: String, val songCount: Int, val albumCount: Int)
+data class ArtistSummary(val name: String, val songCount: Int, val albumCount: Int, val playCount: Int)
