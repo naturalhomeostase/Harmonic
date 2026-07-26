@@ -13,11 +13,10 @@ data class SavedQueueState(val songIds: List<Long>, val currentIndex: Int, val p
 
 /** Fundos de tela padrão já embutidos no app (assets/default_wallpapers). */
 enum class DefaultWallpaper(val assetPath: String, val label: String) {
-    LION_FIRE("default_wallpapers/wallpaper_lion_fire.jpg", "Leão em chamas"),
-    GUITAR_STORM("default_wallpapers/wallpaper_guitar_storm.jpg", "Guitarra elétrica"),
-    VINYL_RAIN("default_wallpapers/wallpaper_vinyl_rain.jpg", "Toca-discos"),
-    FOREST_MELODY("default_wallpapers/wallpaper_forest_melody.jpg", "Floresta encantada"),
-    LOFI_CITY("default_wallpapers/wallpaper_lofi_city.jpg", "Cidade lo-fi")
+    COZY_RECORD("default_wallpapers/wallpaper_cozy_record.jpg", "Tarde de chuva"),
+    LOFI_TOKYO("default_wallpapers/wallpaper_lofi_tokyo.jpg", "Lo-fi Tóquio"),
+    ENCHANTED_FOREST("default_wallpapers/wallpaper_enchanted_forest.jpg", "Floresta encantada"),
+    VINYL_GALAXY("default_wallpapers/wallpaper_vinyl_galaxy.jpg", "Universo musical")
 }
 
 /**
@@ -27,6 +26,9 @@ enum class DefaultWallpaper(val assetPath: String, val label: String) {
  * não precisar depender do Compose.
  */
 enum class GradientTheme(val label: String, val colorsArgb: List<Long>) {
+    // Tema padrão, com as cores do ícone atual do app (anel laranja ->
+    // rosa -> roxo -> azul sobre fundo preto).
+    APP_ICON("Music Box", listOf(0xFF000000, 0xFFE76895, 0xFF39ABE1)),
     // Cores mais explícitas/vivas que a v1 (3 paradas em vez de 2 na
     // maioria), pra ficar bonito tanto como fundo quanto como gradiente de
     // texto — ainda escuro o bastante pra manter o texto branco legível.

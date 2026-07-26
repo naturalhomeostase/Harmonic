@@ -61,7 +61,7 @@ fun AppBackground(settings: SettingsRepository, content: @Composable () -> Unit)
             // Sem imagem escolhida: gradiente como padrão (mais leve — sem
             // decodificar JPEG nenhum). Usa o tema salvo, ou "Meia-noite"
             // se o usuário nunca mexeu nisso.
-            val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.MIDNIGHT
+            val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.APP_ICON
             val colors = theme.colorsArgb.map { Color(it) }
             Box(
                 modifier = Modifier

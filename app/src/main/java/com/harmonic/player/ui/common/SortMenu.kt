@@ -1,5 +1,6 @@
 package com.harmonic.player.ui.common
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 
 import androidx.compose.material.icons.Icons
@@ -43,37 +44,48 @@ fun SortMenuButton(
         Icon(Icons.Filled.Sort, contentDescription = "Ordenar por", tint = Color.White.copy(alpha = 0.85f))
     }
 
-    ThemedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+    // Menu bem mais curto que os outros (só uma lista de critérios + um
+    // toggle crescente/decrescente), então usa uma largura menor — os
+    // demais menus do app (música, álbum, playlist...) usam a largura
+    // padrão de [ThemedDropdownMenu] pra ficarem visualmente consistentes
+    // entre si.
+    ThemedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, widthDp = 200.dp) {
+        val onAccent = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
         androidx.compose.material3.Text(
             "Ordenar por",
             style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
-            color = Color.White.copy(alpha = 0.6f),
+            color = onAccent.copy(alpha = 0.6f),
             modifier = androidx.compose.ui.Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
-        HorizontalDivider()
+        HorizontalDivider(thickness = 0.5.dp, color = onAccent.copy(alpha = 0.15f))
         options.forEach { option ->
             DropdownMenuItem(
-                text = { Text(option.label) },
+                text = { Text(option.label, color = onAccent) },
                 leadingIcon = {
                     if (option.key == selectedKey) {
-                        Icon(Icons.Filled.Check, contentDescription = null)
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = onAccent)
                     }
                 },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                modifier = androidx.compose.ui.Modifier.heightIn(min = 40.dp),
                 onClick = {
                     onSelect(option.key)
                     expanded = false
                 }
             )
         }
-        HorizontalDivider()
+        HorizontalDivider(thickness = 0.5.dp, color = onAccent.copy(alpha = 0.15f))
         DropdownMenuItem(
-            text = { Text(if (ascending) "Crescente" else "Decrescente") },
+            text = { Text(if (ascending) "Crescente" else "Decrescente", color = onAccent) },
             leadingIcon = {
                 Icon(
                     if (ascending) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                    contentDescription = null
+                    contentDescription = null,
+                    tint = onAccent
                 )
             },
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+            modifier = androidx.compose.ui.Modifier.heightIn(min = 40.dp),
             onClick = {
                 onToggleDirection()
                 expanded = false

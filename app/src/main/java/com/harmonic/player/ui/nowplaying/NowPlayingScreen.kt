@@ -9,7 +9,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -24,9 +27,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.harmonic.player.data.AlbumArtLoader
 import com.harmonic.player.data.SongDao
 import com.harmonic.player.playback.PlayerController
@@ -36,6 +42,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +59,7 @@ fun NowPlayingScreen(
     var sliderPosition by remember { mutableStateOf(0f) }
     var isUserSeeking by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showQueueSheet by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
     var selectedLyricIndex by remember { mutableStateOf<Int?>(null) }
     val coverDisplayMode by settings.coverDisplayMode.collectAsState(initial = "VINYL")
@@ -218,6 +226,9 @@ fun NowPlayingScreen(
                     }
                     IconButton(onClick = onOpenEqualizer) {
                         Icon(Icons.Filled.Equalizer, contentDescription = "Equalizador", tint = Color.White.copy(alpha = 0.85f))
+                    }
+                    IconButton(onClick = { showQueueSheet = true }) {
+                        Icon(Icons.Filled.QueueMusic, contentDescription = "Fila de reprodução", tint = Color.White.copy(alpha = 0.85f))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -402,23 +413,147 @@ fun NowPlayingScreen(
     } // fim do MaterialTheme(pageAccent)
     } // fim do Box de fundo
 
-    if (showSleepTimerDialog) {
-        SleepTimerDialog(
-            currentEndAt = state.sleepTimerEndAt,
-            onDismiss = { showSleepTimerDialog = false },
-            onSelectMinutes = { minutes ->
-                playerController.startSleepTimer(minutes)
-                showSleepTimerDialog = false
-            },
-            onSelectEndOfSong = {
-                playerController.stopAtEndOfSong()
-                showSleepTimerDialog = false
-            },
-            onCancel = {
-                playerController.cancelSleepTimer()
-                showSleepTimerDialog = false
-            }
+    if (showQueueSheet) {
+        QueueSheet(
+            queue = state.queue,
+            currentIndex = state.currentIndex,
+            accent = pageAccent,
+            onDismiss = { showQueueSheet = false },
+            onJumpTo = { index -> playerController.skipToQueueItem(index) },
+            onRemove = { index -> playerController.removeFromQueue(index) },
+            onMove = { from, to -> playerController.moveQueueItem(from, to) }
         )
+    }
+}
+
+/**
+ * Painel deslizante com a fila de reprodução atual — antes disso, não
+ * havia NENHUMA forma de ver o que vinha a seguir, só de adicionar coisas
+ * "às cegas" (Tocar em seguida / Adicionar à fila). Mostra a música atual
+ * destacada, deixa arrastar pra reordenar (segura e arrasta, como na tela
+ * de playlist) e tocar num "X" pra tirar uma música da fila sem afetá-la
+ * no resto do app.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QueueSheet(
+    queue: List<com.harmonic.player.data.Song>,
+    currentIndex: Int,
+    accent: Color,
+    onDismiss: () -> Unit,
+    onJumpTo: (Int) -> Unit,
+    onRemove: (Int) -> Unit,
+    onMove: (Int, Int) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var localQueue by remember(queue) { mutableStateOf(queue) }
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    val rowHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) { 64.dp.toPx() }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF16141D),
+        modifier = Modifier.fillMaxHeight(0.85f)
+    ) {
+        Text(
+            "Fila de reprodução",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+        if (localQueue.isEmpty()) {
+            Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                Text("Fila vazia", color = Color.White.copy(alpha = 0.6f))
+            }
+            return@ModalBottomSheet
+        }
+        LazyColumn(modifier = Modifier.fillMaxWidth()) {
+            itemsIndexed(localQueue, key = { _, song -> song.id }) { index, song ->
+                val isCurrent = index == currentIndex
+                val isDragging = index == draggingIndex
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .graphicsLayer { translationY = if (isDragging) dragOffsetY else 0f }
+                        .zIndex(if (isDragging) 1f else 0f)
+                        .background(
+                            when {
+                                isDragging -> Color.White.copy(alpha = 0.08f)
+                                isCurrent -> accent.copy(alpha = 0.14f)
+                                else -> Color.Transparent
+                            }
+                        )
+                        .clickable { onJumpTo(index) }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.DragHandle,
+                        contentDescription = "Arrastar pra reordenar",
+                        tint = Color.White.copy(alpha = 0.35f),
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .pointerInput(song.id) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { draggingIndex = index; dragOffsetY = 0f },
+                                    onDragEnd = {
+                                        draggingIndex = -1
+                                        dragOffsetY = 0f
+                                    },
+                                    onDragCancel = { draggingIndex = -1; dragOffsetY = 0f }
+                                ) { change, delta ->
+                                    change.consume()
+                                    dragOffsetY += delta.y
+                                    val current = draggingIndex
+                                    if (current == -1) return@detectDragGesturesAfterLongPress
+                                    val steps = (dragOffsetY / rowHeightPx).roundToInt()
+                                    val targetIndex = (current + steps).coerceIn(0, localQueue.lastIndex)
+                                    if (targetIndex != current) {
+                                        val mutable = localQueue.toMutableList()
+                                        val moved = mutable.removeAt(current)
+                                        mutable.add(targetIndex, moved)
+                                        localQueue = mutable
+                                        onMove(current, targetIndex)
+                                        dragOffsetY -= (targetIndex - current) * rowHeightPx
+                                        draggingIndex = targetIndex
+                                    }
+                                }
+                            }
+                    )
+                    if (isCurrent) {
+                        Icon(Icons.Filled.VolumeUp, contentDescription = "Tocando agora", tint = accent, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            song.title,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            color = if (isCurrent) accent else Color.White,
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                        )
+                        Text(
+                            song.artist,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            color = Color.White.copy(alpha = 0.55f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    IconButton(onClick = {
+                        localQueue = localQueue.toMutableList().apply { removeAt(index) }
+                        onRemove(index)
+                    }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Remover da fila", tint = Color.White.copy(alpha = 0.5f))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
     }
 }
 

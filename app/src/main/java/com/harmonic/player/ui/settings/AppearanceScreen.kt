@@ -201,7 +201,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
             // tema logo abaixo — sem precisar de nenhum estado paralelo.
             AppearancePreviewMockup(
                 gradientTheme = com.harmonic.player.data.GradientTheme.values()
-                    .find { it.name == currentGradient } ?: com.harmonic.player.data.GradientTheme.MIDNIGHT,
+                    .find { it.name == currentGradient } ?: com.harmonic.player.data.GradientTheme.APP_ICON,
                 useImageBackground = currentWallpaper != null || currentCustomBg != null,
                 imageModel = currentCustomBg ?: currentWallpaper?.let {
                     "file:///android_asset/${com.harmonic.player.data.DefaultWallpaper.valueOf(it).assetPath}"
@@ -419,7 +419,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
 
                 val activeTheme = com.harmonic.player.data.GradientTheme.values()
-                    .find { it.name == currentGradient } ?: com.harmonic.player.data.GradientTheme.MIDNIGHT
+                    .find { it.name == currentGradient } ?: com.harmonic.player.data.GradientTheme.APP_ICON
                 val previewStart = titleGradientColorStart?.let { Color(it) } ?: Color(activeTheme.colorsArgb[0])
                 val previewEnd = titleGradientColorEnd?.let { Color(it) } ?: Color(activeTheme.colorsArgb.last())
                 var editingGradientSwatch by remember { mutableStateOf<GradientSwatch?>(null) }

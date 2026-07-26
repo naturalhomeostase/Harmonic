@@ -96,6 +96,9 @@ interface SongDao {
     @Query("UPDATE songs SET title = :title WHERE id = :songId")
     suspend fun renameSong(songId: Long, title: String)
 
+    @Query("UPDATE songs SET path = :path WHERE id = :songId")
+    suspend fun updateSongPath(songId: Long, path: String)
+
     @Query("""
         UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, trackNumber = :trackNumber
         WHERE id = :songId

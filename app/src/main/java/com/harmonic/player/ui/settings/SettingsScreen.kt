@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Sync
@@ -151,6 +152,29 @@ fun SettingsScreen(
                             .setData(android.net.Uri.parse("package:${notifContext.packageName}"))
                     }
                     notifContext.startActivity(intent)
+                }
+            )
+
+            SettingsRow(
+                icon = Icons.Filled.BatteryChargingFull,
+                title = "Otimização de bateria",
+                subtitle = "Em alguns celulares (Xiaomi, Samsung...), isso também precisa estar desativado pro player não ser encerrado sozinho em segundo plano",
+                onClick = {
+                    val pm = notifContext.getSystemService(android.os.PowerManager::class.java)
+                    if (pm != null && !pm.isIgnoringBatteryOptimizations(notifContext.packageName)) {
+                        try {
+                            notifContext.startActivity(
+                                android.content.Intent(
+                                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    android.net.Uri.parse("package:${notifContext.packageName}")
+                                )
+                            )
+                        } catch (e: Exception) {
+                            notifContext.startActivity(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        }
+                    } else {
+                        android.widget.Toast.makeText(notifContext, "Já está desativada pra esse app", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             )
         }

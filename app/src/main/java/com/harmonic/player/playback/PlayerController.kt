@@ -240,6 +240,34 @@ class PlayerController(
         persistQueueSnapshot()
     }
 
+    /** Pula direto pra uma música específica da fila (tela "Fila"). */
+    fun skipToQueueItem(index: Int) {
+        controller?.seekTo(index, 0L)
+    }
+
+    /** Remove uma música da fila (não afeta o arquivo/banco, só a ordem de tocar). */
+    fun removeFromQueue(index: Int) {
+        controller?.removeMediaItem(index)
+        val newQueue = _uiState.value.queue.toMutableList().apply {
+            if (index in indices) removeAt(index)
+        }
+        val newCurrentIndex = controller?.currentMediaItemIndex ?: _uiState.value.currentIndex
+        _uiState.value = _uiState.value.copy(queue = newQueue, currentIndex = newCurrentIndex)
+        persistQueueSnapshot()
+    }
+
+    /** Reordena a fila arrastando um item de uma posição pra outra (tela "Fila"). */
+    fun moveQueueItem(from: Int, to: Int) {
+        if (from == to) return
+        controller?.moveMediaItem(from, to)
+        val newQueue = _uiState.value.queue.toMutableList().apply {
+            if (from in indices) add(to.coerceIn(0, size - 1), removeAt(from))
+        }
+        val newCurrentIndex = controller?.currentMediaItemIndex ?: _uiState.value.currentIndex
+        _uiState.value = _uiState.value.copy(queue = newQueue, currentIndex = newCurrentIndex)
+        persistQueueSnapshot()
+    }
+
     fun togglePlayPause() {
         val c = controller ?: return
         if (c.isPlaying) {

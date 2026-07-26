@@ -52,7 +52,19 @@ fun MiniPlayer(
     // já sumiu e o fundo original do app aparece por trás) — contraste
     // sempre no sentido contrário ao da vinheta, pra continuar legível não
     // importa a cor por trás.
-    val titleBrush = remember { Brush.horizontalGradient(listOf(Color.White, Color.White.copy(alpha = 0.5f))) }
+    // Título na cor de destaque (igual aos botões) com um brilho suave —
+    // ajuda a diferenciar o título do mini player dos títulos das músicas
+    // na lista logo acima, que não usam essa cor.
+    val accentColor = MaterialTheme.colorScheme.primary
+    val titleGlowStyle = remember(accentColor) {
+        androidx.compose.ui.text.TextStyle(
+            shadow = androidx.compose.ui.graphics.Shadow(
+                color = accentColor.copy(alpha = 0.7f),
+                offset = androidx.compose.ui.geometry.Offset.Zero,
+                blurRadius = 18f
+            )
+        )
+    }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -93,7 +105,8 @@ fun MiniPlayer(
                     song.title,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyLarge.copy(brush = titleBrush)
+                    color = accentColor,
+                    style = MaterialTheme.typography.bodyLarge.merge(titleGlowStyle)
                 )
                 Text(
                     song.artist,

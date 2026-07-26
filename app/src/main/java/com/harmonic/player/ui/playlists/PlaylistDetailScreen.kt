@@ -98,31 +98,43 @@ fun PlaylistDetailScreen(
                         Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções", tint = Color.White)
                     }
                     com.harmonic.player.ui.common.ThemedDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        val onAccent = MaterialTheme.colorScheme.onSurface
                         DropdownMenuItem(
                             text = { Text(if (editMode) "Concluir edição" else "Editar playlist") },
                             leadingIcon = { Icon(if (editMode) Icons.Filled.Check else Icons.Filled.Edit, contentDescription = null) },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                            modifier = Modifier.heightIn(min = 40.dp),
                             onClick = {
                                 menuExpanded = false
                                 editMode = !editMode
                             }
                         )
+                        HorizontalDivider(thickness = 0.5.dp, color = onAccent.copy(alpha = 0.12f))
                         DropdownMenuItem(
                             text = { Text("Exportar como M3U") },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                            modifier = Modifier.heightIn(min = 40.dp),
                             onClick = {
                                 menuExpanded = false
                                 val uri = PlaylistImportExport.exportToM3U(context, playlistName, songs)
                                 PlaylistImportExport.shareM3U(context, uri, playlistName)
                             }
                         )
+                        HorizontalDivider(thickness = 0.5.dp, color = onAccent.copy(alpha = 0.12f))
                         DropdownMenuItem(
                             text = { Text("Importar de M3U") },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                            modifier = Modifier.heightIn(min = 40.dp),
                             onClick = {
                                 menuExpanded = false
                                 importLauncher.launch("audio/*")
                             }
                         )
+                        HorizontalDivider(thickness = 0.5.dp, color = onAccent.copy(alpha = 0.12f))
                         DropdownMenuItem(
                             text = { Text("Excluir playlist") },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                            modifier = Modifier.heightIn(min = 40.dp),
                             onClick = {
                                 menuExpanded = false
                                 scope.launch { dao.deletePlaylist(playlistId) }

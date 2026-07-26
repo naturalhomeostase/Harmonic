@@ -9,17 +9,17 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 
 private val fallbackDarkColors = darkColorScheme(
-    primary = Color(0xFFFFB74D),      // laranja (combina com o wallpaper do leão)
-    secondary = Color(0xFFFFB74D),
-    tertiary = Color(0xFFFFB74D),
-    background = Color(0xFF0E0E10),
+    primary = Color(0xFFE76895),      // rosa do ícone do app (tema padrão "Music Box")
+    secondary = Color(0xFFE76895),
+    tertiary = Color(0xFFE76895),
+    background = Color(0xFF000000),
     surface = Color(0xFF1A1A1D)
 )
 
 private val fallbackLightColors = lightColorScheme(
-    primary = Color(0xFFEF6C00),
-    secondary = Color(0xFFEF6C00),
-    tertiary = Color(0xFFEF6C00)
+    primary = Color(0xFFC23E74),
+    secondary = Color(0xFFC23E74),
+    tertiary = Color(0xFFC23E74)
 )
 
 enum class ThemeMode { LIGHT, DARK, AMOLED, SYSTEM }

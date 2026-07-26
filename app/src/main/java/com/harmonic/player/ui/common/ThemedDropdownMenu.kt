@@ -2,6 +2,7 @@ package com.harmonic.player.ui.common
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
@@ -9,8 +10,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+
+/** Largura padrão de todos os menus do app — só o "Ordenar por" usa uma menor (ver [SortMenuButton]). */
+val DefaultMenuWidth = 240.dp
 
 /**
  * Versão "casca" do [DropdownMenu] padrão do Material3, só que pintada com
@@ -26,15 +32,24 @@ import androidx.compose.ui.unit.dp
  * texto/ícone dos itens. Como a cor de destaque muda com o tema escolhido
  * em Aparência, este menu acompanha automaticamente sem precisar de nenhum
  * ajuste manual em cada tela que o usa.
+ *
+ * A cor do texto/ícone (`onSurface`) não é mais fixa em branco — é
+ * calculada pela luminância da cor de destaque, igual ao esquema já usado
+ * na tela "Tocando agora" pra letra da música: texto escuro em cima de
+ * destaques claros (amarelo, rosa clarinho...), branco em cima de
+ * destaques escuros. Sem isso, alguns temas de cor deixavam o texto do
+ * menu quase ilegível.
  */
 @Composable
 fun ThemedDropdownMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     offset: DpOffset = DpOffset(0.dp, 0.dp),
+    widthDp: Dp = DefaultMenuWidth,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val accent = MaterialTheme.colorScheme.primary
+    val onAccent = if (accent.luminance() > 0.6f) Color(0xFF1A1A1A) else Color.White
     val themedScheme = MaterialTheme.colorScheme.copy(
         surface = accent,
         surfaceContainer = accent,
@@ -43,9 +58,9 @@ fun ThemedDropdownMenu(
         surfaceContainerLow = accent,
         surfaceContainerLowest = accent,
         surfaceVariant = accent,
-        onSurface = Color.White,
-        onSurfaceVariant = Color.White.copy(alpha = 0.85f),
-        outlineVariant = Color.White.copy(alpha = 0.22f)
+        onSurface = onAccent,
+        onSurfaceVariant = onAccent.copy(alpha = 0.8f),
+        outlineVariant = onAccent.copy(alpha = 0.18f)
     )
 
     MaterialTheme(colorScheme = themedScheme) {
@@ -54,8 +69,9 @@ fun ThemedDropdownMenu(
             onDismissRequest = onDismissRequest,
             offset = offset,
             modifier = Modifier
-                .clip(RoundedCornerShape(18.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(18.dp)),
+                .width(widthDp)
+                .clip(RoundedCornerShape(26.dp))
+                .border(1.dp, onAccent.copy(alpha = 0.16f), RoundedCornerShape(26.dp)),
             content = content
         )
     }

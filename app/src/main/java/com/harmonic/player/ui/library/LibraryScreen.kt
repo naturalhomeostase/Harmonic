@@ -178,7 +178,7 @@ fun LibraryScreen(
             // Cores escolhidas livremente pelo usuário na roda de cores.
             Brush.linearGradient(listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!)))
         } else {
-            val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.MIDNIGHT
+            val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.APP_ICON
             Brush.linearGradient(theme.colorsArgb.map { Color(it) })
         }
     } else null
@@ -272,6 +272,9 @@ fun LibraryScreen(
                 },
                 actions = {
                     if (!isSearching) {
+                        IconButton(onClick = { isSearching = true }) {
+                            Icon(Icons.Filled.Search, contentDescription = "Buscar", tint = Color.White)
+                        }
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Filled.Settings, contentDescription = "Configurações", tint = Color.White)
                         }
@@ -449,11 +452,8 @@ fun LibraryScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { isSearching = true }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Filled.Search, contentDescription = "Buscar", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
-                        }
                         if (countText != null) {
-                            Spacer(Modifier.width(2.dp))
+                            Spacer(Modifier.width(6.dp))
                             Text(countText, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.5f))
                         }
                     }
@@ -734,47 +734,6 @@ fun LibraryScreen(
                     val albumName = drilledGroup ?: ""
                     val songs by dao.getSongsByAlbum(albumId).collectAsState(initial = emptyList())
                     val isFavAlbum = favoriteAlbumIds.contains(albumId)
-
-                    // Mesma ideia da tela "Tocando agora": extrai a capa do
-                    // álbum e pinta o fundo (desfocado) e as cores de
-                    // destaque dessa página a partir dela, em vez de usar o
-                    // tema fixo do app — só enquanto estiver dentro do álbum.
-                    val representativeSong = songs.firstOrNull()
-                    val albumBitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = representativeSong?.id) {
-                        value = representativeSong?.let { com.harmonic.player.data.AlbumArtLoader.load(context, it) }
-                    }
-                    val extractedAlbumColor by produceState<Color?>(initialValue = null, key1 = albumBitmap) {
-                        value = albumBitmap?.let { bmp ->
-                            withContext(Dispatchers.Default) {
-                                try {
-                                    val palette = androidx.palette.graphics.Palette.from(bmp).generate()
-                                    val swatch = palette.vibrantSwatch ?: palette.lightVibrantSwatch
-                                        ?: palette.dominantSwatch ?: palette.mutedSwatch
-                                    swatch?.let { Color(it.rgb) }
-                                } catch (e: Exception) {
-                                    null
-                                }
-                            }
-                        }
-                    }
-                    val albumAccent = (extractedAlbumColor ?: MaterialTheme.colorScheme.primary).let { color ->
-                        if (color.luminance() < 0.35f) androidx.compose.ui.graphics.lerp(color, Color.White, 0.35f) else color
-                    }
-
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        albumBitmap?.let { bmp ->
-                            Image(
-                                bitmap = bmp.asImageBitmap(),
-                                contentDescription = null,
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize().blur(60.dp)
-                            )
-                            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
-                        }
-                        MaterialTheme(
-                            colorScheme = MaterialTheme.colorScheme.withSingleAccent(albumAccent),
-                            typography = MaterialTheme.typography
-                        ) {
                     Column {
                         GroupHeader(
                             title = albumName,
@@ -834,8 +793,6 @@ fun LibraryScreen(
                             currentPlayingSongId = playbackState.currentSong?.id,
                             isPlaying = playbackState.isPlaying
                         )
-                    }
-                        }
                     }
                 }
 
@@ -1966,10 +1923,25 @@ private fun SongOptionsSheet(
 
     // Excluir/renomear o arquivo de verdade (não só o registro no app) pode
     // pedir confirmação do sistema em Android 10+ — esse launcher recebe
-    // essa resposta.
+    // essa resposta. Guardamos o valor pendente porque, sem isso, aprovar
+    // a permissão na tela do sistema não tentava a mudança de novo sozinho
+    // — o usuário aprovava e nada acontecia.
+    var pendingRename by remember { mutableStateOf<Pair<android.content.ContentValues, String>?>(null) }
     val securityLauncher = rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
-    ) { /* o usuário decide na própria tela do sistema; nada a fazer aqui */ }
+    ) { result ->
+        val (values, newPath) = pendingRename ?: return@rememberLauncherForActivityResult
+        pendingRename = null
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    context.contentResolver.update(songUri, values, null, null)
+                    dao.updateSongPath(song.id, newPath)
+                    android.media.MediaScannerConnection.scanFile(context, arrayOf(song.path, newPath), null, null)
+                } catch (e: Exception) { /* usuário pode ter negado; ignora */ }
+            }
+        }
+    }
 
     // Salvar tags grava direto no arquivo via jaudiotagger — não passa pelo
     // MediaStore, então o pedido de permissão via createWriteRequest não
@@ -2310,18 +2282,29 @@ private fun SongOptionsSheet(
                 TextButton(
                     enabled = newFileName.isNotBlank(),
                     onClick = {
+                        val newPath = java.io.File(song.path).parent?.let {
+                            java.io.File(it, "${newFileName.trim()}.${song.format.lowercase()}").absolutePath
+                        } ?: song.path
+                        val values = android.content.ContentValues().apply {
+                            put(android.provider.MediaStore.Audio.Media.DISPLAY_NAME, "${newFileName.trim()}.${song.format.lowercase()}")
+                        }
                         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                             try {
-                                val values = android.content.ContentValues().apply {
-                                    put(android.provider.MediaStore.Audio.Media.DISPLAY_NAME, "${newFileName.trim()}.${song.format.lowercase()}")
-                                }
                                 context.contentResolver.update(songUri, values, null, null)
+                                // Sem isso, o app só saberia do nome novo no
+                                // próximo re-scan (que podia demorar) — o
+                                // arquivo já tinha sido renomeado de verdade,
+                                // mas continuava aparecendo com o nome antigo
+                                // até limpar o cache do app inteiro.
+                                dao.updateSongPath(song.id, newPath)
+                                android.media.MediaScannerConnection.scanFile(context, arrayOf(song.path, newPath), null, null)
                             } catch (e: SecurityException) {
                                 val intentSender = if (android.os.Build.VERSION.SDK_INT >= 29) {
                                     (e as? android.app.RecoverableSecurityException)?.userAction?.actionIntent?.intentSender
                                 } else null
-                                intentSender?.let {
-                                    securityLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build())
+                                if (intentSender != null) {
+                                    pendingRename = values to newPath
+                                    securityLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(intentSender).build())
                                 }
                             } catch (e: Exception) { /* ignora, evita derrubar o app */ }
                         }
@@ -2460,7 +2443,18 @@ private suspend fun saveTagsToFileAndDb(
         // sabe) — sem isso, outros apps (gerenciador de arquivos, etc)
         // continuariam vendo as tags antigas.
         android.media.MediaScannerConnection.scanFile(context, arrayOf(song.path), null, null)
-        android.widget.Toast.makeText(context, "Tags salvas no arquivo", android.widget.Toast.LENGTH_SHORT).show()
+        // Se o artista ou álbum mudou, a música pode "sumir" da página em
+        // que você estava (ex: dentro da página de um artista específico,
+        // ou de um álbum) — não é um bug, ela só não bate mais com aquele
+        // filtro. Sem esse aviso, isso parecia perda de dado.
+        val artistChanged = values.artist.trim() != song.artist
+        val albumChanged = values.album.trim() != song.album
+        val message = when {
+            artistChanged || albumChanged ->
+                "Tags salvas — como o artista/álbum mudou, ela pode ter saído dessa lista (procure em \"${values.artist.trim()}\")"
+            else -> "Tags salvas no arquivo"
+        }
+        android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
     } else {
         android.widget.Toast.makeText(context, "Não foi possível salvar as tags nesse arquivo", android.widget.Toast.LENGTH_LONG).show()
     }

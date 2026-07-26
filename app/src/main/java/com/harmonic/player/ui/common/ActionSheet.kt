@@ -1,6 +1,7 @@
 package com.harmonic.player.ui.common
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -61,12 +62,13 @@ fun ActionSheet(
     items: List<ActionSheetItem>
 ) {
     ThemedDropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        val onAccent = MaterialTheme.colorScheme.onSurface
         if (title != null) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                 Text(
                     title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = Color.White,
+                    color = onAccent,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -74,20 +76,27 @@ fun ActionSheet(
                     Text(
                         subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.75f),
+                        color = onAccent.copy(alpha = 0.75f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-            HorizontalDivider(color = Color.White.copy(alpha = 0.18f))
+            HorizontalDivider(color = onAccent.copy(alpha = 0.18f))
         }
-        items.forEach { item ->
+        items.forEachIndexed { index, item ->
             DropdownMenuItem(
-                text = { Text(item.label, color = item.tint ?: Color.White) },
-                leadingIcon = { Icon(item.icon, contentDescription = null, tint = item.tint ?: Color.White) },
+                text = { Text(item.label, color = item.tint ?: onAccent) },
+                leadingIcon = { Icon(item.icon, contentDescription = null, tint = item.tint ?: onAccent) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                modifier = Modifier.heightIn(min = 40.dp),
                 onClick = item.onClick
             )
+            // Linha fininha quase transparente entre as opções — só não
+            // depois da última, pra não sobrar uma linha solta embaixo.
+            if (index != items.lastIndex) {
+                HorizontalDivider(thickness = 0.5.dp, color = onAccent.copy(alpha = 0.12f))
+            }
         }
     }
 }

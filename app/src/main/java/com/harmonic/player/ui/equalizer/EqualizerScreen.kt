@@ -164,15 +164,21 @@ fun EqualizerScreen(
                     Text(reverbPresetNames.getOrElse(eqState.reverbPreset) { "Nenhum" })
                 }
                 com.harmonic.player.ui.common.ThemedDropdownMenu(expanded = reverbMenuExpanded, onDismissRequest = { reverbMenuExpanded = false }) {
+                    val onAccent = MaterialTheme.colorScheme.onSurface
                     reverbPresetNames.forEachIndexed { index, name ->
                         DropdownMenuItem(
                             text = { Text(name) },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                            modifier = Modifier.heightIn(min = 40.dp),
                             onClick = {
                                 equalizerController.setReverbPreset(index)
                                 scope.launch { settings.setReverbPreset(index) }
                                 reverbMenuExpanded = false
                             }
                         )
+                        if (index != reverbPresetNames.lastIndex) {
+                            HorizontalDivider(thickness = 0.5.dp, color = onAccent.copy(alpha = 0.12f))
+                        }
                     }
                 }
             }
