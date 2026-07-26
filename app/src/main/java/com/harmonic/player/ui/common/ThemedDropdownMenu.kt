@@ -63,15 +63,24 @@ fun ThemedDropdownMenu(
         outlineVariant = onAccent.copy(alpha = 0.18f)
     )
 
+    // A cantoneira arredondada tem que vir do parâmetro `shape` do próprio
+    // DropdownMenu, não de um `.clip()` no Modifier externo: o Material3
+    // desenha o fundo do menu numa Surface interna com a SUA PRÓPRIA shape
+    // padrão (bem menos arredondada) — um `.clip()` por fora não alcança
+    // esse fundo, então ele continuava aparecendo quase quadrado por trás
+    // dos cantos arredondados "de mentira" do clip externo.
+    val menuShape = RoundedCornerShape(26.dp)
+
     MaterialTheme(colorScheme = themedScheme) {
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = onDismissRequest,
             offset = offset,
+            shape = menuShape,
             modifier = Modifier
                 .width(widthDp)
-                .clip(RoundedCornerShape(26.dp))
-                .border(1.dp, onAccent.copy(alpha = 0.16f), RoundedCornerShape(26.dp)),
+                .clip(menuShape)
+                .border(1.dp, onAccent.copy(alpha = 0.16f), menuShape),
             content = content
         )
     }

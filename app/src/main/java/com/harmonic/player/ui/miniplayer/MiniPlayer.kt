@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -108,13 +109,28 @@ fun MiniPlayer(
                     color = accentColor,
                     style = MaterialTheme.typography.bodyLarge.merge(titleGlowStyle)
                 )
-                Text(
-                    song.artist,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.7f)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Indica que há música(s) inserida(s) manualmente na
+                    // fila ("Tocar a seguir" / "Adicionar à fila") ainda
+                    // não tocadas — sem esse ícone não tinha como saber
+                    // isso de relance, só abrindo a tela de fila.
+                    if (state.manuallyQueuedSongIds.isNotEmpty()) {
+                        Icon(
+                            imageVector = Icons.Filled.QueueMusic,
+                            contentDescription = "Há músicas na fila",
+                            tint = Color.White.copy(alpha = 0.7f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(
+                        song.artist,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
             }
 
             // Botões com no mínimo 48dp de área de toque (tamanho recomendado

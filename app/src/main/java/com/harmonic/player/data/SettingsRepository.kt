@@ -26,18 +26,18 @@ enum class DefaultWallpaper(val assetPath: String, val label: String) {
  * não precisar depender do Compose.
  */
 enum class GradientTheme(val label: String, val colorsArgb: List<Long>) {
-    // Tema padrão, com as cores do ícone atual do app (anel laranja ->
-    // rosa -> roxo -> azul sobre fundo preto).
-    APP_ICON("Music Box", listOf(0xFF000000, 0xFFE76895, 0xFF39ABE1)),
-    // Cores mais explícitas/vivas que a v1 (3 paradas em vez de 2 na
-    // maioria), pra ficar bonito tanto como fundo quanto como gradiente de
-    // texto — ainda escuro o bastante pra manter o texto branco legível.
-    MIDNIGHT("Meia-noite", listOf(0xFF020024, 0xFF090979, 0xFF00B4DB)),
-    SUNSET("Pôr do sol", listOf(0xFFFFD200, 0xFFFF512F, 0xFFDD2476)),
-    OCEAN("Oceano", listOf(0xFF000428, 0xFF004E92, 0xFF00D4FF)),
-    FOREST("Floresta", listOf(0xFF0F2027, 0xFF134E5E, 0xFF00C853)),
-    ROSE("Rosé", listOf(0xFF2C0E37, 0xFF6B2D5C, 0xFFFF6FB5)),
-    NEON("Neon", listOf(0xFF7303C0, 0xFFEC38BC, 0xFFFDEFF9)),
+    // Tema padrão, com as cores do ícone atual do app (preto -> rosa).
+    // Só essas 2 paradas (nada de azul aqui) — é o que fazia a cor de
+    // destaque "vazar" pra azul ao escolher esse tema (ver clearAccentColor).
+    APP_ICON("Music Box", listOf(0xFF000000, 0xFFE76895)),
+    // De volta a 2 paradas (como na v1) — a versão com 3 paradas ficava
+    // "suja"/menos nítida tanto como fundo quanto como gradiente de texto.
+    MIDNIGHT("Meia-noite", listOf(0xFF020024, 0xFF00B4DB)),
+    SUNSET("Pôr do sol", listOf(0xFFFFD200, 0xFFDD2476)),
+    OCEAN("Oceano", listOf(0xFF000428, 0xFF00D4FF)),
+    FOREST("Floresta", listOf(0xFF0F2027, 0xFF00C853)),
+    ROSE("Rosé", listOf(0xFF2C0E37, 0xFFFF6FB5)),
+    NEON("Neon", listOf(0xFF7303C0, 0xFFFDEFF9)),
     MONO("Mono (mais leve)", listOf(0xFF161616, 0xFF0A0A0A))
 }
 
@@ -115,6 +115,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAccentColor(colorArgb: Int) {
         context.dataStore.edit { it[Keys.ACCENT_COLOR] = colorArgb; it[Keys.USE_ALBUM_ART_COLOR] = false }
+    }
+
+    /**
+     * Remove a cor de destaque customizada, voltando pro rosa fixo do tema
+     * padrão "Music Box" (ver [com.harmonic.player.ui.theme.HarmonicTheme]).
+     * Sem isso, não existia jeito de "desfazer" [setAccentColor] — então
+     * escolher o gradiente padrão (que tem um azul mais saturado que o rosa
+     * do ícone) deixava esse azul preso como destaque pra sempre, mesmo
+     * depois de trocar de tema e voltar pro padrão.
+     */
+    suspend fun clearAccentColor() {
+        context.dataStore.edit { it.remove(Keys.ACCENT_COLOR); it[Keys.USE_ALBUM_ART_COLOR] = false }
     }
 
     suspend fun setUseAlbumArtColor(enabled: Boolean) {

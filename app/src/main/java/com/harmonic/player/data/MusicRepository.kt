@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Antes, o escaneamento do MediaStore rodava dentro de um LaunchedEffect na
@@ -20,12 +22,24 @@ class MusicRepository(
 ) {
     private var observingStarted = false
 
+    // O escaneamento inicial (disparado no Application.onCreate) e os
+    // escaneamentos reativos (disparados por mudanças no MediaStore — ex:
+    // o próprio MediaScannerConnection.scanFile chamado depois de editar
+    // tags) são lançados como jobs separados na mesma scope, então podiam
+    // rodar ao mesmo tempo. Como runScan() lê o banco, mescla, e só DEPOIS
+    // regrava (não é atômico), um scan mais antigo que começou a ler ANTES
+    // de uma edição de tags podia terminar de escrever DEPOIS dela — e
+    // sobrescrevia a edição de volta pro valor antigo, sem nenhum erro
+    // visível. Serializando com um Mutex, só um runScan() roda por vez, e
+    // cada um sempre lê o estado mais recente do banco antes de mesclar.
+    private val scanMutex = Mutex()
+
     fun startObserving(scope: CoroutineScope) {
         if (observingStarted) return
         observingStarted = true
-        scope.launch { runScan() }
+        scope.launch { runScanSerialized() }
         scanner.observeChanges()
-            .onEach { runScan() }
+            .onEach { runScanSerialized() }
             .launchIn(scope)
     }
 
@@ -38,8 +52,10 @@ class MusicRepository(
      * concedida — daí a sensação de "preciso reiniciar pra ver as músicas".
      */
     fun rescanNow(scope: CoroutineScope) {
-        scope.launch { runScan() }
+        scope.launch { runScanSerialized() }
     }
+
+    private suspend fun runScanSerialized() = scanMutex.withLock { runScan() }
 
     private suspend fun runScan() {
         val ignored = settings.ignoredFolders.first()

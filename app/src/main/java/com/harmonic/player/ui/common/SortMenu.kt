@@ -2,6 +2,7 @@ package com.harmonic.player.ui.common
 
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -40,8 +41,17 @@ fun SortMenuButton(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    IconButton(onClick = { expanded = true }) {
-        Icon(Icons.Filled.Sort, contentDescription = "Ordenar por", tint = Color.White.copy(alpha = 0.85f))
+    // Mesmo tamanho do botão de shuffle ao lado (32dp/18dp) — antes este
+    // ficava no tamanho padrão do IconButton (48dp), forçando a barra de
+    // totais inteira a ficar mais alta que o necessário só por causa dele,
+    // sobrando bastante espaço vazio acima/abaixo do texto pequeno ao lado.
+    IconButton(onClick = { expanded = true }, modifier = androidx.compose.ui.Modifier.size(32.dp)) {
+        Icon(
+            Icons.Filled.Sort,
+            contentDescription = "Ordenar por",
+            tint = Color.White.copy(alpha = 0.85f),
+            modifier = androidx.compose.ui.Modifier.size(18.dp)
+        )
     }
 
     // Menu bem mais curto que os outros (só uma lista de critérios + um

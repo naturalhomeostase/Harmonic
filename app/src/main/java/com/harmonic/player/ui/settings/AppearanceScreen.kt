@@ -247,7 +247,20 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                                     // automaticamente — a opção de escolher uma
                                     // cor preferida continua disponível acima,
                                     // bastando tocar nela depois pra sobrescrever.
-                                    settings.setAccentColor(accentFromGradient(theme).toArgb())
+                                    // Exceção: o tema padrão "Music Box" já TEM
+                                    // uma cor de destaque própria (o rosa do
+                                    // ícone, definida em HarmonicTheme) — usar
+                                    // setAccentColor aqui prendia permanentemente
+                                    // a cor mais saturada do gradiente (o azul),
+                                    // deixando o "tema padrão" azul depois de
+                                    // trocar pra outro tema e voltar. Limpando a
+                                    // cor customizada em vez de fixar uma nova,
+                                    // ele volta a usar o rosa de verdade.
+                                    if (theme == com.harmonic.player.data.GradientTheme.APP_ICON) {
+                                        settings.clearAccentColor()
+                                    } else {
+                                        settings.setAccentColor(accentFromGradient(theme).toArgb())
+                                    }
                                     // Idem pro gradiente dos títulos.
                                     val (start, end) = titleGradientFromGradientTheme(theme)
                                     settings.setTitleGradientColors(start.toArgb(), end.toArgb())
@@ -678,6 +691,28 @@ private fun adjustAccentForReadability(color: Color): Color =
     if (color.luminance() < 0.35f) lerp(color, Color.White, 0.35f) else color
 
 /**
+ * Aplica [adjustAccentForReadability] nas duas pontas de um gradiente, mas
+ * garante que elas continuem visivelmente diferentes uma da outra depois do
+ * ajuste. Sem isso, um início escuro (clareado 35% em direção ao branco) e um
+ * fim já claro podiam convergir pra tons muito próximos — o gradiente
+ * "sumia", parecendo quase uma cor só em vez de um degradê.
+ */
+private fun adjustGradientPairForReadability(start: Color, end: Color): Pair<Color, Color> {
+    val adjustedStart = adjustAccentForReadability(start)
+    val adjustedEnd = adjustAccentForReadability(end)
+    val contrast = kotlin.math.abs(adjustedStart.luminance() - adjustedEnd.luminance())
+    if (contrast >= 0.22f) return adjustedStart to adjustedEnd
+    // Pouca diferença de luminância: afasta as pontas uma da outra (a mais
+    // escura vai mais pro escuro, a mais clara vai mais pro claro) até
+    // ficarem claramente distinguíveis como gradiente.
+    return if (adjustedStart.luminance() <= adjustedEnd.luminance()) {
+        lerp(adjustedStart, Color.Black, 0.3f) to lerp(adjustedEnd, Color.White, 0.3f)
+    } else {
+        lerp(adjustedStart, Color.White, 0.3f) to lerp(adjustedEnd, Color.Black, 0.3f)
+    }
+}
+
+/**
  * Extrai DUAS cores (pra combinar com [SettingsRepository.setTitleGradientColors])
  * a partir de um bitmap — mesma ideia da extração da cor de destaque única
  * ([extractAccentFromBitmap]), só que pegando dois tons vibrantes
@@ -692,7 +727,7 @@ private fun extractTitleGradientFromBitmap(bitmap: Bitmap): Pair<Color, Color>? 
         ?: palette.mutedSwatch?.takeIf { it.rgb != start?.rgb }
         ?: start
     if (start == null || end == null) null
-    else adjustAccentForReadability(Color(start.rgb)) to adjustAccentForReadability(Color(end.rgb))
+    else adjustGradientPairForReadability(Color(start.rgb), Color(end.rgb))
 } catch (e: Exception) {
     null
 }
@@ -723,8 +758,7 @@ private suspend fun titleGradientFromUri(context: android.content.Context, uriSt
 
 /** Título em gradiente pra um tema de gradiente pronto — usa as pontas dele. */
 private fun titleGradientFromGradientTheme(theme: com.harmonic.player.data.GradientTheme): Pair<Color, Color> =
-    adjustAccentForReadability(Color(theme.colorsArgb.first())) to
-        adjustAccentForReadability(Color(theme.colorsArgb.last()))
+    adjustGradientPairForReadability(Color(theme.colorsArgb.first()), Color(theme.colorsArgb.last()))
 
 /**
  * Extrai uma cor de destaque "vibrante" de um bitmap com a Palette API —

@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import com.harmonic.player.ui.theme.withSingleAccent
@@ -305,10 +307,34 @@ fun LibraryScreen(
         var dragAccumulator by remember { mutableStateOf(0f) }
         val canSwipeTabs = drilledGroup == null && drilledAlbumId == null && searchQuery.isBlank()
 
+        // Deslocamento horizontal do conteúdo, animável: acompanha o dedo
+        // durante o arrasto (com uma leve resistência) pra dar feedback
+        // visual imediato de que o swipe está sendo reconhecido — antes,
+        // nada se mexia até soltar o dedo, e por isso parecia que o gesto
+        // não estava funcionando. Ao soltar, anima suavemente de volta pra
+        // 0 (seja porque a aba mudou — nesse caso "desliza" o novo conteúdo
+        // pra dentro — seja porque não passou do limite, e aí só volta pro
+        // lugar), sem nenhum exagero de velocidade ou distância.
+        val dragOffsetX = remember { androidx.compose.animation.core.Animatable(0f) }
+        val density = LocalDensity.current
+        val maxDragOffsetPx = with(density) { 48.dp.toPx() }
+        val maxDragFadePx = with(density) { 220.dp.toPx() }
+
+        LaunchedEffect(selectedTab) {
+            dragOffsetX.animateTo(
+                0f,
+                animationSpec = tween(durationMillis = 260, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .graphicsLayer {
+                    translationX = dragOffsetX.value
+                    alpha = 1f - (kotlin.math.abs(dragOffsetX.value) / maxDragFadePx).coerceIn(0f, 0.25f)
+                }
                 .then(
                     if (canSwipeTabs) {
                         Modifier.pointerInput(visibleTabs, selectedTab) {
@@ -316,16 +342,30 @@ fun LibraryScreen(
                                 onDragStart = { dragAccumulator = 0f },
                                 onDragEnd = {
                                     val currentIndex = visibleTabs.indexOf(selectedTab)
-                                    when {
-                                        dragAccumulator < -120f && currentIndex < visibleTabs.lastIndex ->
-                                            selectedTab = visibleTabs[currentIndex + 1]
-                                        dragAccumulator > 120f && currentIndex > 0 ->
-                                            selectedTab = visibleTabs[currentIndex - 1]
+                                    val changedTab = when {
+                                        dragAccumulator < -120f && currentIndex < visibleTabs.lastIndex -> {
+                                            selectedTab = visibleTabs[currentIndex + 1]; true
+                                        }
+                                        dragAccumulator > 120f && currentIndex > 0 -> {
+                                            selectedTab = visibleTabs[currentIndex - 1]; true
+                                        }
+                                        else -> false
                                     }
                                     dragAccumulator = 0f
+                                    // Se a aba não mudou, o LaunchedEffect(selectedTab)
+                                    // acima não dispara (a key não muda) — então essa
+                                    // volta suave pro lugar precisa ser feita aqui.
+                                    if (!changedTab) {
+                                        scope.launch {
+                                            dragOffsetX.animateTo(0f, tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                                        }
+                                    }
                                 }
                             ) { change, dragAmount ->
                                 dragAccumulator += dragAmount
+                                scope.launch {
+                                    dragOffsetX.snapTo((dragOffsetX.value + dragAmount * 0.55f).coerceIn(-maxDragOffsetPx, maxDragOffsetPx))
+                                }
                                 change.consume()
                             }
                         }
@@ -339,11 +379,30 @@ fun LibraryScreen(
             // play/pause somem da barra de notificação mesmo com a música
             // tocando. Esse aviso deixa isso claro em vez do usuário
             // descobrir escondido, sem saber o motivo.
+            //
+            // IMPORTANTE: `areNotificationsEnabled()` só verifica a permissão
+            // GERAL do app — não pega o caso (bem comum) de só o canal
+            // "Reprodução" estar desativado individualmente nas
+            // configurações (ex: o usuário desativou só ele antes, ou o
+            // canal foi criado com uma config ruim numa versão antiga do
+            // app — depois de criado, o sistema NUNCA deixa o app mudar a
+            // importância do canal de novo, só o usuário manualmente).
+            // Nesse caso a permissão geral aparece concedida, mas a
+            // notificação nunca aparece — só os controles da tela de
+            // bloqueio continuam, porque esses vêm direto da MediaSession,
+            // não do canal de notificação. Por isso checamos o canal
+            // específico também, e linkamos direto pra tela dele (não só a
+            // geral do app) quando ele é a causa.
             var notificationBannerDismissed by remember { mutableStateOf(false) }
-            val notificationsEnabled = remember {
-                androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+            val notificationManagerCompat = remember { androidx.core.app.NotificationManagerCompat.from(context) }
+            val playbackChannelBlocked = remember {
+                val channel = notificationManagerCompat.getNotificationChannel(
+                    com.harmonic.player.playback.PlaybackService.NOTIFICATION_CHANNEL_ID
+                )
+                channel != null && channel.importance == android.app.NotificationManager.IMPORTANCE_NONE
             }
-            if (!notificationsEnabled && !notificationBannerDismissed) {
+            val notificationsEnabled = remember { notificationManagerCompat.areNotificationsEnabled() }
+            if ((!notificationsEnabled || playbackChannelBlocked) && !notificationBannerDismissed) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -363,8 +422,19 @@ fun LibraryScreen(
                         )
                         TextButton(
                             onClick = {
-                                val intent = android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                // Quando é só o canal específico que está
+                                // bloqueado (permissão geral ok), abre direto
+                                // a tela desse canal — a tela geral de
+                                // notificações do app não deixa reativar um
+                                // canal individual escondido lá dentro.
+                                val intent = if (playbackChannelBlocked && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                    android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                        .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, com.harmonic.player.playback.PlaybackService.NOTIFICATION_CHANNEL_ID)
+                                } else {
+                                    android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                }
                                 context.startActivity(intent)
                             },
                             contentPadding = PaddingValues(0.dp)
@@ -399,18 +469,37 @@ fun LibraryScreen(
                 ) {
                     visibleTabs.forEach { tab ->
                         val isSelected = selectedTab == tab
+                        val tabTitleBrush = LocalSongTitleBrush.current
                         Tab(
                             selected = isSelected,
                             onClick = { selectedTab = tab },
                             text = {
-                                Text(
-                                    tab.label,
-                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.55f),
-                                    fontSize = if (isSelected) 15.sp else 13.sp,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                                )
+                                if (isSelected && tabTitleBrush != null) {
+                                    // Gradiente de letras ativado: a aba
+                                    // selecionada usa o mesmo gradiente de
+                                    // destaque em vez de cor sólida.
+                                    Text(
+                                        tab.label,
+                                        style = androidx.compose.ui.text.TextStyle(
+                                            brush = tabTitleBrush,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    )
+                                } else {
+                                    Text(
+                                        tab.label,
+                                        // Sem gradiente de letras: a aba
+                                        // selecionada usa a cor de destaque
+                                        // do tema em vez de branco puro, pra
+                                        // continuar se destacando das outras.
+                                        color = if (isSelected) accentColor else Color.White.copy(alpha = 0.55f),
+                                        fontSize = if (isSelected) 15.sp else 13.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                    )
+                                }
                             },
-                            selectedContentColor = Color.White,
+                            selectedContentColor = accentColor,
                             unselectedContentColor = Color.White.copy(alpha = 0.55f)
                         )
                     }
@@ -706,7 +795,17 @@ fun LibraryScreen(
                                                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
                                         )
                                     },
-                                    headlineContent = { Text(album.album, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White) },
+                                    headlineContent = {
+                                        val albumRowBrush = LocalSongTitleBrush.current
+                                        if (albumRowBrush != null) {
+                                            Text(
+                                                album.album, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                                style = LocalTextStyle.current.copy(brush = albumRowBrush)
+                                            )
+                                        } else {
+                                            Text(album.album, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
+                                        }
+                                    },
                                     supportingContent = {
                                         Text(
                                             "${album.artist} • ${album.trackCount} música${if (album.trackCount == 1) "" else "s"}",
@@ -1383,7 +1482,17 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(items, key = { it }) { name ->
             ListItem(
-                headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                headlineContent = {
+                    val groupTitleBrush = LocalSongTitleBrush.current
+                    if (groupTitleBrush != null) {
+                        Text(
+                            name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = LocalTextStyle.current.copy(brush = groupTitleBrush)
+                        )
+                    } else {
+                        Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 modifier = Modifier.compactVertical(3.dp).clickable { onClick(name) }
             )
@@ -1406,7 +1515,15 @@ private fun FolderList(folders: List<String>, onLongClick: (String) -> Unit = {}
                     Icon(Icons.Filled.Folder, contentDescription = null, tint = accentColor)
                 },
                 headlineContent = {
-                    Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
+                    val folderTitleBrush = LocalSongTitleBrush.current
+                    if (folderTitleBrush != null) {
+                        Text(
+                            folderName, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = LocalTextStyle.current.copy(brush = folderTitleBrush)
+                        )
+                    } else {
+                        Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
+                    }
                 },
                 supportingContent = {
                     Text(folder, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.55f))
@@ -1437,7 +1554,17 @@ private fun ArtistRow(artist: ArtistSummary, dao: SongDao, onLongClick: () -> Un
                 placeholderShape = CircleShape
             )
         },
-        headlineContent = { Text(artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White) },
+        headlineContent = {
+            val titleBrush = LocalSongTitleBrush.current
+            if (titleBrush != null) {
+                Text(
+                    artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = LocalTextStyle.current.copy(brush = titleBrush)
+                )
+            } else {
+                Text(artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
+            }
+        },
         supportingContent = {
             Text(
                 "${artist.songCount} música(s) • ${artist.albumCount} álbum(ns)",
@@ -1470,13 +1597,23 @@ private fun ArtistGridCell(artist: ArtistSummary, dao: SongDao, onLongClick: () 
             placeholderShape = CircleShape
         )
         Spacer(Modifier.height(6.dp))
-        Text(
-            artist.name,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = Color.White,
-            style = MaterialTheme.typography.bodyMedium
-        )
+        val artistTitleBrush = LocalSongTitleBrush.current
+        if (artistTitleBrush != null) {
+            Text(
+                artist.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(brush = artistTitleBrush)
+            )
+        } else {
+            Text(
+                artist.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
         Text(
             "${artist.songCount} música(s) • ${artist.albumCount} álbum(ns)",
             maxLines = 1,
@@ -1507,13 +1644,23 @@ private fun AlbumGridCell(album: AlbumSummary, dao: SongDao, onLongClick: () -> 
                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
         )
         Spacer(Modifier.height(6.dp))
-        Text(
-            album.album,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = Color.White,
-            style = MaterialTheme.typography.bodyMedium
-        )
+        val albumTitleBrush = LocalSongTitleBrush.current
+        if (albumTitleBrush != null) {
+            Text(
+                album.album,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(brush = albumTitleBrush)
+            )
+        } else {
+            Text(
+                album.album,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
         Text(
             album.artist,
             maxLines = 1,

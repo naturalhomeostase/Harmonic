@@ -30,6 +30,14 @@ data class PlaybackUiState(
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val queue: List<Song> = emptyList(),
     val currentIndex: Int = -1,
+    /**
+     * IDs de músicas que o usuário colocou manualmente na fila ("Tocar a
+     * seguir" / "Adicionar à fila") e que ainda não foram tocadas. Usado só
+     * pra mostrar o ícone de fila no miniplayer — não afeta a reprodução em
+     * si. É recalculado (mantendo só o que ainda está à frente da faixa
+     * atual) toda vez que a fila ou o índice atual mudam.
+     */
+    val manuallyQueuedSongIds: Set<Long> = emptySet(),
     // Sleep timer: null = desativado, -1 = "parar no fim da música atual"
     val sleepTimerEndAt: Long? = null,
     val sleepTimerRemainingMs: Long = 0,
@@ -158,6 +166,22 @@ class PlayerController(
         })
     }
 
+    /**
+     * Mantém [PlaybackUiState.manuallyQueuedSongIds] só com o que ainda está
+     * à frente da faixa atual — sem isso, o ícone de fila no miniplayer
+     * continuaria aceso pra sempre depois que a música "furada" já tivesse
+     * tocado e ficado pra trás na lista.
+     */
+    private fun pruneManuallyQueuedIds() {
+        val state = _uiState.value
+        if (state.manuallyQueuedSongIds.isEmpty()) return
+        val upcomingIds = state.queue.drop((state.currentIndex + 1).coerceAtLeast(0)).map { it.id }.toSet()
+        val pruned = state.manuallyQueuedSongIds intersect upcomingIds
+        if (pruned != state.manuallyQueuedSongIds) {
+            _uiState.value = state.copy(manuallyQueuedSongIds = pruned)
+        }
+    }
+
     private fun updateCurrentSongFromIndex() {
         val index = controller?.currentMediaItemIndex ?: -1
         val song = _uiState.value.queue.getOrNull(index)
@@ -166,6 +190,7 @@ class PlayerController(
             currentIndex = index,
             durationMs = controller?.duration?.coerceAtLeast(0) ?: 0
         )
+        pruneManuallyQueuedIds()
         // "Corte": se a música tem um ponto de início definido (menu
         // Cortar), pula direto pra lá em vez de tocar do começo de verdade.
         // Isso não recodifica o arquivo — só ajusta onde a reprodução
@@ -182,7 +207,8 @@ class PlayerController(
             currentSong = songs.getOrNull(startIndex),
             currentIndex = startIndex,
             isPlaying = true, // otimista: evita o ícone de play "atrasado" até o callback confirmar
-            sourceKey = sourceKey
+            sourceKey = sourceKey,
+            manuallyQueuedSongIds = emptySet() // nova fila = nenhuma inserção manual pendente ainda
         )
         val startPositionMs = songs.getOrNull(startIndex)?.trimStartMs?.takeIf { it > 0 } ?: 0L
         controller?.setMediaItems(items, startIndex, startPositionMs)
@@ -230,13 +256,19 @@ class PlayerController(
         val insertIndex = (controller?.currentMediaItemIndex ?: 0) + 1
         controller?.addMediaItem(insertIndex, song.toMediaItem())
         val newQueue = _uiState.value.queue.toMutableList().apply { add(insertIndex, song) }
-        _uiState.value = _uiState.value.copy(queue = newQueue)
+        _uiState.value = _uiState.value.copy(
+            queue = newQueue,
+            manuallyQueuedSongIds = _uiState.value.manuallyQueuedSongIds + song.id
+        )
         persistQueueSnapshot()
     }
 
     fun addToQueueEnd(song: Song) {
         controller?.addMediaItem(song.toMediaItem())
-        _uiState.value = _uiState.value.copy(queue = _uiState.value.queue + song)
+        _uiState.value = _uiState.value.copy(
+            queue = _uiState.value.queue + song,
+            manuallyQueuedSongIds = _uiState.value.manuallyQueuedSongIds + song.id
+        )
         persistQueueSnapshot()
     }
 
@@ -253,6 +285,7 @@ class PlayerController(
         }
         val newCurrentIndex = controller?.currentMediaItemIndex ?: _uiState.value.currentIndex
         _uiState.value = _uiState.value.copy(queue = newQueue, currentIndex = newCurrentIndex)
+        pruneManuallyQueuedIds()
         persistQueueSnapshot()
     }
 
@@ -265,6 +298,7 @@ class PlayerController(
         }
         val newCurrentIndex = controller?.currentMediaItemIndex ?: _uiState.value.currentIndex
         _uiState.value = _uiState.value.copy(queue = newQueue, currentIndex = newCurrentIndex)
+        pruneManuallyQueuedIds()
         persistQueueSnapshot()
     }
 
