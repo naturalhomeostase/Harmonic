@@ -261,7 +261,14 @@ class PlayerController(
      * de cada botão embaralhar a lista manualmente do seu próprio jeito.
      */
     fun requestPlayQueueShuffled(songs: List<Song>, sourceKey: String, sourceLabel: String) {
-        requestPlayQueue(songs, 0, sourceKey, sourceLabel, shuffled = true)
+        if (songs.isEmpty()) return
+        // Antes começava sempre no índice 0 (a primeira música da lista
+        // original) e só ligava o modo aleatório do player DEPOIS —
+        // resultado: a primeira faixa tocada nunca era aleatória de
+        // verdade, só as próximas. Sorteando o índice inicial aqui, a
+        // própria primeira música já sai aleatória.
+        val startIndex = songs.indices.random()
+        requestPlayQueue(songs, startIndex, sourceKey, sourceLabel, shuffled = true)
     }
 
     fun confirmPendingPlay() {

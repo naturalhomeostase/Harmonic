@@ -219,19 +219,28 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Antes era uma ÚNICA linha rolável misturando gradientes,
-            // imagens prontas e o "+" da galeria no final — o usuário só
-            // descobria que dava pra escolher uma foto própria se
-            // arrastasse até o fim, sem nenhuma pista de que havia mais
-            // opções ali. Separado em duas seções com título (Gradientes /
-            // Imagens), e o "+" fica logo ao lado do título "Imagens" —
-            // sempre visível, sem precisar adivinhar.
-            Text(
-                "Gradientes",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // "Gradientes" e "Imagens" lado a lado como duas abas — só o
+            // conteúdo da aba selecionada aparece abaixo, em vez de
+            // empilhar as duas seções inteiras (gradientes E imagens ao
+            // mesmo tempo), que ocupava espaço demais na tela.
+            var selectedBackgroundTab by remember { mutableStateOf(if (currentCustomBg != null || currentWallpaper != null) 1 else 0) }
+            Row(modifier = Modifier.fillMaxWidth()) {
+                listOf("Gradientes", "Imagens").forEachIndexed { index, label ->
+                    val isSelectedTab = selectedBackgroundTab == index
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (isSelectedTab) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isSelectedTab) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                        modifier = Modifier
+                            .padding(end = 24.dp, bottom = 6.dp)
+                            .clickable { selectedBackgroundTab = index }
+                    )
+                }
+            }
             Spacer(Modifier.height(8.dp))
+
+            if (selectedBackgroundTab == 0) {
             androidx.compose.foundation.lazy.LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 4.dp)
@@ -299,31 +308,28 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                     }
                 }
             }
-
-            Spacer(Modifier.height(20.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    "Imagens",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-                // O "+" agora mora aqui, colado no título — visível na
-                // hora, sem precisar arrastar a lista até o fim pra
-                // descobrir que dá pra escolher uma foto da galeria.
-                IconButton(onClick = { pickImageLauncher.launch("image/*") }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Escolher imagem da galeria", tint = MaterialTheme.colorScheme.primary)
-                }
-            }
-            Spacer(Modifier.height(4.dp))
+            } else {
             androidx.compose.foundation.lazy.LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 4.dp)
             ) {
+                item {
+                    // O "+" de volta dentro da própria caixa de demonstração
+                    // de tema (primeiro card da lista de Imagens) — igual ao
+                    // "+" da paleta de cores acima, em vez de um ícone solto
+                    // do lado do título ocupando uma linha extra na página.
+                    Box(
+                        modifier = Modifier
+                            .size(width = 88.dp, height = 120.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Transparent)
+                            .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                            .clickable { pickImageLauncher.launch("image/*") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "Escolher imagem da galeria", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
                 items(DefaultWallpaper.values().toList()) { wallpaper ->
                     val isSelected = currentCustomBg == null && currentWallpaper == wallpaper.name
                     Box(
@@ -378,8 +384,8 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 item {
                     // Sua foto já escolhida (se houver) continua aparecendo
                     // como um card dentro da linha de Imagens, marcado como
-                    // selecionado — só o "+" pra ESCOLHER uma nova foto que
-                    // se mudou pra cima, ao lado do título.
+                    // selecionada — tocar nela de novo abre a galeria pra
+                    // trocar por outra foto.
                     if (currentCustomBg != null) {
                         Box(
                             modifier = Modifier
@@ -410,6 +416,7 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                         }
                     }
                 }
+            }
             }
 
             Spacer(Modifier.height(20.dp))

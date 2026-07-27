@@ -53,7 +53,9 @@ fun HiddenFoldersScreen(database: MusicDatabase, onBack: () -> Unit) {
             return@Scaffold
         }
 
-        LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             items(allFolders, key = { it }) { folder ->
                 val isHidden = hiddenFolders.contains(folder)
                 val folderName = folder.trimEnd('/').substringAfterLast('/')
@@ -87,6 +89,12 @@ fun HiddenFoldersScreen(database: MusicDatabase, onBack: () -> Unit) {
                     }
                 )
             }
+        }
+        com.harmonic.player.ui.common.FastScrollbar(
+            listState = listState,
+            itemCount = allFolders.size,
+            modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd)
+        )
         }
     }
 }

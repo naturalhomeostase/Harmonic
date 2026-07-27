@@ -9,15 +9,23 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -203,14 +211,35 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        if (audioPermissionGranted) {
-                            HarmonicNavHost(playerController, app)
-                            com.harmonic.player.ui.common.PlaybackContextConfirmDialog(playerController)
-                        } else {
-                            com.harmonic.player.ui.common.PermissionRationaleScreen(
-                                onRequestPermission = { permissionsState.launchMultiplePermissionRequest() }
-                            )
-                        }
+                        // Vai direto pra Músicas em vez de mostrar uma tela
+                        // própria pedindo permissão antes — o diálogo do
+                        // SISTEMA já é disparado automaticamente pelo
+                        // LaunchedEffect acima, e aparece por cima da tela de
+                        // Músicas normalmente. Se o usuário negar (ou já
+                        // tiver negado antes), o HarmonicNavHost mostra um
+                        // aviso simples com um botão pra tentar de novo, em
+                        // vez da biblioteca ficar vazia sem explicação.
+                        HarmonicNavHost(
+                            playerController = playerController,
+                            app = app,
+                            audioPermissionGranted = audioPermissionGranted,
+                            onRequestPermission = {
+                                if (permissionsState.shouldShowRationale) {
+                                    permissionsState.launchMultiplePermissionRequest()
+                                } else {
+                                    // "Não perguntar de novo" já foi marcado (ou o
+                                    // sistema decidiu não mostrar mais o diálogo) —
+                                    // só abrindo a tela de permissões do app nas
+                                    // Configurações do sistema resolve a partir daqui.
+                                    startActivity(
+                                        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.fromParts("package", packageName, null)
+                                        }
+                                    )
+                                }
+                            }
+                        )
+                        com.harmonic.player.ui.common.PlaybackContextConfirmDialog(playerController)
                     }
                 }
             }
@@ -235,7 +264,12 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp) {
+private fun HarmonicNavHost(
+    playerController: PlayerController,
+    app: HarmonicApp,
+    audioPermissionGranted: Boolean,
+    onRequestPermission: () -> Unit
+) {
     val navController = rememberNavController()
 
     // Uma única instância do equalizador vive durante toda a navegação —
@@ -264,6 +298,9 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
         }
     }
 
+    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+
+    Box(modifier = Modifier.fillMaxSize()) {
     NavHost(navController = navController, startDestination = "library") {
         composable("library") {
             LibraryScreen(
@@ -346,5 +383,36 @@ private fun HarmonicNavHost(playerController: PlayerController, app: HarmonicApp
                 onOpenNowPlaying = { navController.navigate("now_playing") }
             )
         }
+    }
+
+    // Aviso pra recuperar de uma permissão negada — sem isso, quem nega o
+    // diálogo do sistema (de propósito ou sem querer) ficava com a
+    // biblioteca vazia pra sempre, sem nenhuma pista do porquê nem um jeito
+    // de resolver a partir do próprio app.
+    if (currentRoute == "library" && !audioPermissionGranted) {
+        androidx.compose.material3.Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            color = androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer,
+            shadowElevation = 6.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.compose.material3.Text(
+                    "Sem acesso às músicas do aparelho.",
+                    modifier = Modifier.weight(1f),
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(Modifier.width(12.dp))
+                androidx.compose.material3.TextButton(onClick = onRequestPermission) {
+                    androidx.compose.material3.Text("Permitir")
+                }
+            }
+        }
+    }
     }
 }

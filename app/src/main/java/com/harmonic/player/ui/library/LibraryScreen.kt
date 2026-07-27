@@ -63,6 +63,7 @@ import androidx.compose.ui.layout.layout
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -95,6 +96,13 @@ private val songSortOptions = listOf(
     com.harmonic.player.ui.common.SortOption("artist", "Artista"),
     com.harmonic.player.ui.common.SortOption("duration", "Duração"),
     com.harmonic.player.ui.common.SortOption("dateAdded", "Data adicionada"),
+    com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas")
+)
+
+private val albumDetailSongSortOptions = listOf(
+    com.harmonic.player.ui.common.SortOption("trackNumber", "Faixa"),
+    com.harmonic.player.ui.common.SortOption("title", "Título"),
+    com.harmonic.player.ui.common.SortOption("duration", "Duração"),
     com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas")
 )
 
@@ -205,6 +213,12 @@ fun LibraryScreen(
     var artistSortAscending by remember { mutableStateOf(true) }
     var playlistSortKey by remember { mutableStateOf("createdAt") }
     var playlistSortAscending by remember { mutableStateOf(false) }
+    // Ordenação das músicas DENTRO da página de um artista/álbum aberto
+    // (botão "ordenar por" ao lado do play/"⋮" no cabeçalho dessas páginas).
+    var artistDetailSortKey by rememberSaveable { mutableStateOf("title") }
+    var artistDetailSortAscending by rememberSaveable { mutableStateOf(true) }
+    var albumDetailSortKey by rememberSaveable { mutableStateOf("trackNumber") }
+    var albumDetailSortAscending by rememberSaveable { mutableStateOf(true) }
     var showCreatePlaylistFab by remember { mutableStateOf(false) }
     // Qual playlist está com diálogo de renomear/excluir aberto — o menu de
     // opções em si agora vive dentro da própria linha da playlist, perto do
@@ -213,22 +227,48 @@ fun LibraryScreen(
     var showRenamePlaylistDialog by remember { mutableStateOf(false) }
     var showDeletePlaylistConfirm by remember { mutableStateOf(false) }
 
-    var selectedTab by remember { mutableStateOf(LibraryTab.SONGS) }
+    // rememberSaveable (não só remember) porque abrir "Tocando agora" navega
+    // pra uma rota nova no NavHost — o que descarta a composição desta tela
+    // enquanto ela não está visível. Com remember comum, esse estado
+    // (aba selecionada e artista/álbum "aberto") era perdido nesse meio
+    // tempo, e voltar de "Tocando agora" sempre caía na lista de Músicas em
+    // vez de voltar pra página do artista/álbum onde o usuário estava.
+    var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.SONGS) }
     // Quando o usuário toca num nome de artista/álbum/gênero/pasta, guardamos
     // aqui qual grupo foi escolhido, pra mostrar as músicas daquele grupo.
     // Voltar (seta ou botão físico) limpa isso e volta pra lista de grupos.
-    var drilledGroup by remember { mutableStateOf<String?>(null) }
-    var drilledAlbumId by remember { mutableStateOf<Long?>(null) }
-    var drilledAlbumArtist by remember { mutableStateOf("") }
+    var drilledGroup by rememberSaveable { mutableStateOf<String?>(null) }
+    var drilledAlbumId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var drilledAlbumArtist by rememberSaveable { mutableStateOf("") }
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
 
+    // Esconde a barrinha de "total de músicas/artistas/..." (com o
+    // shuffle e o ordenar por) ao rolar a lista, deixando só o menu
+    // horizontal das abas visível acima — igual um cabeçalho que recolhe.
+    // Usa nested scroll pra "ouvir" o gesto de rolagem das listas internas
+    // (LazyColumn/LazyVerticalGrid) ANTES delas consumirem o movimento.
+    var countBarVisible by remember { mutableStateOf(true) }
+    val countBarNestedScrollConnection = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
+                if (available.y < -4f) countBarVisible = false
+                else if (available.y > 4f) countBarVisible = true
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
+
     // Volta pra lista de grupos ao trocar de aba
     LaunchedEffect(selectedTab) {
         drilledGroup = null
         drilledAlbumId = null
+        countBarVisible = true
     }
 
     // Pede foco assim que o campo de busca aparece, para o usuário poder
@@ -262,7 +302,19 @@ fun LibraryScreen(
                                 .focusRequester(searchFocusRequester)
                         )
                     } else {
-                        Text("Music Box", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        val accent = MaterialTheme.colorScheme.primary
+                        Text(
+                            "Music Box",
+                            color = accent,
+                            fontWeight = FontWeight.Bold,
+                            style = LocalTextStyle.current.copy(
+                                shadow = androidx.compose.ui.graphics.Shadow(
+                                    color = accent.copy(alpha = 0.75f),
+                                    offset = androidx.compose.ui.geometry.Offset.Zero,
+                                    blurRadius = 18f
+                                )
+                            )
+                        )
                     }
                 },
                 navigationIcon = {
@@ -332,6 +384,7 @@ fun LibraryScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .nestedScroll(countBarNestedScrollConnection)
                 .graphicsLayer {
                     translationX = dragOffsetX.value
                     alpha = 1f - (kotlin.math.abs(dragOffsetX.value) / maxDragFadePx).coerceIn(0f, 0.25f)
@@ -537,6 +590,13 @@ fun LibraryScreen(
                     }
                     else -> null
                 }
+                // Some ao rolar a lista pra baixo (só o menu horizontal das
+                // abas, acima, continua fixo) e reaparece ao rolar pra cima.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = countBarVisible,
+                    enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
+                ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -587,6 +647,7 @@ fun LibraryScreen(
                             else -> {}
                         }
                     }
+                }
                 }
             }
 
@@ -661,35 +722,63 @@ fun LibraryScreen(
                         artistListState.scrollToItem(0)
                         artistGridState.scrollToItem(0)
                     }
-                    if (artistGridView) {
-                        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
-                            state = artistGridState,
-                            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                            contentPadding = PaddingValues(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(artistSummaries, key = { it.name }) { artist ->
-                                ArtistGridCell(artist = artist, dao = dao, onLongClick = { quickMenuArtist = artist.name }) { drilledGroup = artist.name }
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        if (artistGridView) {
+                            androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                                state = artistGridState,
+                                columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(artistSummaries, key = { it.name }) { artist ->
+                                    ArtistGridCell(artist = artist, dao = dao, onLongClick = { quickMenuArtist = artist.name }) { drilledGroup = artist.name }
+                                }
                             }
-                        }
-                    } else {
-                        LazyColumn(state = artistListState, modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            items(artistSummaries, key = { it.name }) { artist ->
-                                ArtistRow(artist = artist, dao = dao, onLongClick = { quickMenuArtist = artist.name }) { drilledGroup = artist.name }
+                            com.harmonic.player.ui.common.FastScrollbarGrid(
+                                gridState = artistGridState,
+                                itemCount = artistSummaries.size,
+                                modifier = Modifier.align(Alignment.CenterEnd)
+                            )
+                        } else {
+                            LazyColumn(state = artistListState, modifier = Modifier.fillMaxSize()) {
+                                items(artistSummaries, key = { it.name }) { artist ->
+                                    ArtistRow(artist = artist, dao = dao, onLongClick = { quickMenuArtist = artist.name }) { drilledGroup = artist.name }
+                                }
                             }
+                            com.harmonic.player.ui.common.FastScrollbar(
+                                listState = artistListState,
+                                itemCount = artistSummaries.size,
+                                modifier = Modifier.align(Alignment.CenterEnd)
+                            )
                         }
                     }
                 }
                 selectedTab == LibraryTab.ARTISTS -> {
                     val artistName = drilledGroup!!
-                    val songs by dao.getSongsByArtist(artistName).collectAsState(initial = emptyList())
+                    val songsRaw by dao.getSongsByArtist(artistName).collectAsState(initial = emptyList())
+                    val songs = remember(songsRaw, artistDetailSortKey, artistDetailSortAscending) {
+                        val base = when (artistDetailSortKey) {
+                            "duration" -> songsRaw.sortedBy { it.durationMs }
+                            "dateAdded" -> songsRaw.sortedBy { it.dateAdded }
+                            "playCount" -> songsRaw.sortedBy { it.playCount }
+                            else -> songsRaw.sortedBy { it.title.lowercase() }
+                        }
+                        if (artistDetailSortAscending) base else base.reversed()
+                    }
                     val isFavArtist = favoriteArtists.contains(artistName)
                     Column {
                         GroupHeader(
                             title = artistName,
                             onBack = { drilledGroup = null },
+                            onPlay = { playerController.requestPlayQueue(songs, 0, "artist:$artistName", artistName) },
+                            sortMenu = {
+                                com.harmonic.player.ui.common.SortMenuButton(
+                                    options = songSortOptions, selectedKey = artistDetailSortKey, ascending = artistDetailSortAscending,
+                                    onSelect = { artistDetailSortKey = it }, onToggleDirection = { artistDetailSortAscending = !artistDetailSortAscending }
+                                )
+                            },
                             menuItems = listOf(
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
                                     playerController.requestPlayQueue(songs, 0, "artist:$artistName", artistName)
@@ -760,11 +849,12 @@ fun LibraryScreen(
                         albumListState.scrollToItem(0)
                         albumGridState.scrollToItem(0)
                     }
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     if (albumGridView) {
                         androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
                             state = albumGridState,
                             columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(12.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -782,8 +872,13 @@ fun LibraryScreen(
                                 )
                             }
                         }
+                        com.harmonic.player.ui.common.FastScrollbarGrid(
+                            gridState = albumGridState,
+                            itemCount = albums.size,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        )
                     } else {
-                        LazyColumn(state = albumListState, modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        LazyColumn(state = albumListState, modifier = Modifier.fillMaxSize()) {
                             items(albums, key = { it.albumId }) { album ->
                                 val representativeSong by produceState<Song?>(initialValue = null, key1 = album.representativeSongId) {
                                     value = dao.getSongById(album.representativeSongId)
@@ -828,18 +923,40 @@ fun LibraryScreen(
                                 )
                             }
                         }
+                        com.harmonic.player.ui.common.FastScrollbar(
+                            listState = albumListState,
+                            itemCount = albums.size,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        )
+                    }
                     }
                 }
                 selectedTab == LibraryTab.ALBUMS -> {
                     val albumId = drilledAlbumId!!
                     val albumName = drilledGroup ?: ""
-                    val songs by dao.getSongsByAlbum(albumId).collectAsState(initial = emptyList())
+                    val songsRaw by dao.getSongsByAlbum(albumId).collectAsState(initial = emptyList())
+                    val songs = remember(songsRaw, albumDetailSortKey, albumDetailSortAscending) {
+                        val base = when (albumDetailSortKey) {
+                            "title" -> songsRaw.sortedBy { it.title.lowercase() }
+                            "duration" -> songsRaw.sortedBy { it.durationMs }
+                            "playCount" -> songsRaw.sortedBy { it.playCount }
+                            else -> songsRaw.sortedBy { it.trackNumber ?: Int.MAX_VALUE }
+                        }
+                        if (albumDetailSortAscending) base else base.reversed()
+                    }
                     val isFavAlbum = favoriteAlbumIds.contains(albumId)
                     Column {
                         GroupHeader(
                             title = albumName,
                             subtitle = drilledAlbumArtist,
                             onBack = { drilledGroup = null; drilledAlbumId = null },
+                            onPlay = { playerController.requestPlayQueue(songs, 0, "album:$albumId", albumName) },
+                            sortMenu = {
+                                com.harmonic.player.ui.common.SortMenuButton(
+                                    options = albumDetailSongSortOptions, selectedKey = albumDetailSortKey, ascending = albumDetailSortAscending,
+                                    onSelect = { albumDetailSortKey = it }, onToggleDirection = { albumDetailSortAscending = !albumDetailSortAscending }
+                                )
+                            },
                             menuItems = listOf(
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
                                     playerController.requestPlayQueue(songs, 0, "album:$albumId", albumName)
@@ -997,7 +1114,8 @@ fun LibraryScreen(
                         LaunchedEffect(playlistSortKey, playlistSortAscending) {
                             playlistListState.scrollToItem(0)
                         }
-                        LazyColumn(state = playlistListState, modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        LazyColumn(state = playlistListState, modifier = Modifier.fillMaxSize()) {
                             items(playlists, key = { it.id }) { playlist ->
                                 var showPlaylistMenu by remember { mutableStateOf(false) }
                                 ListItem(
@@ -1060,6 +1178,12 @@ fun LibraryScreen(
                                     }
                                 )
                             }
+                        }
+                        com.harmonic.player.ui.common.FastScrollbar(
+                            listState = playlistListState,
+                            itemCount = playlists.size,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        )
                         }
                     }
                 }
@@ -1435,7 +1559,9 @@ private fun GroupHeader(
     title: String,
     onBack: () -> Unit,
     subtitle: String? = null,
-    menuItems: List<com.harmonic.player.ui.common.ActionSheetItem>? = null
+    menuItems: List<com.harmonic.player.ui.common.ActionSheetItem>? = null,
+    onPlay: (() -> Unit)? = null,
+    sortMenu: (@Composable () -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
     Row(
@@ -1463,6 +1589,16 @@ private fun GroupHeader(
                 )
             }
         }
+        // Botão de play dedicado + "ordenar por", do lado dos "⋮" — antes
+        // essas ações só existiam escondidas dentro do menu de três
+        // pontinhos ("Tocar tudo"), exigindo um toque a mais só pra tocar
+        // o artista/álbum inteiro.
+        if (onPlay != null) {
+            IconButton(onClick = onPlay) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = "Tocar", tint = Color.White)
+            }
+        }
+        sortMenu?.invoke()
         if (menuItems != null) {
             Box {
                 IconButton(onClick = { showMenu = true }) {
@@ -1481,7 +1617,9 @@ private fun GroupHeader(
 
 @Composable
 private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    val listState = rememberLazyListState()
+    Box(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         items(items, key = { it }) { name ->
             ListItem(
                 headlineContent = {
@@ -1500,6 +1638,12 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
             )
         }
     }
+    com.harmonic.player.ui.common.FastScrollbar(
+        listState = listState,
+        itemCount = items.size,
+        modifier = Modifier.align(Alignment.CenterEnd)
+    )
+    }
 }
 
 /**
@@ -1509,7 +1653,9 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
 @Composable
 private fun FolderList(folders: List<String>, onLongClick: (String) -> Unit = {}, onClick: (String) -> Unit) {
     val accentColor = MaterialTheme.colorScheme.primary
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    val listState = rememberLazyListState()
+    Box(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         items(folders, key = { it }) { folder ->
             val folderName = folder.trimEnd('/').substringAfterLast('/').ifBlank { folder }
             ListItem(
@@ -1534,6 +1680,12 @@ private fun FolderList(folders: List<String>, onLongClick: (String) -> Unit = {}
                 modifier = Modifier.combinedClickable(onClick = { onClick(folder) }, onLongClick = { onLongClick(folder) })
             )
         }
+    }
+    com.harmonic.player.ui.common.FastScrollbar(
+        listState = listState,
+        itemCount = folders.size,
+        modifier = Modifier.align(Alignment.CenterEnd)
+    )
     }
 }
 

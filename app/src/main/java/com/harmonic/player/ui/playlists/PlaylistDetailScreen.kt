@@ -158,10 +158,12 @@ fun PlaylistDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Button(onClick = { play(songs, 0) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Tocar")
+                    IconButton(onClick = { play(songs, 0) }) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = "Tocar",
+                            tint = if (isThisPlaylistActive && playbackState.isPlaying) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.85f)
+                        )
                     }
                     IconButton(onClick = {
                         playerController.requestPlayQueueShuffled(songs, sourceKey, playlistName)
@@ -208,12 +210,13 @@ fun PlaylistDetailScreen(
                 var dragOffsetY by remember { mutableStateOf(0f) }
                 val density = androidx.compose.ui.platform.LocalDensity.current
                 val rowHeightPx = with(density) { 64.dp.toPx() }
+                val playlistScrollState = androidx.compose.foundation.rememberScrollState()
 
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                        .fillMaxSize()
+                        .verticalScroll(playlistScrollState)
                 ) {
                     localOrder.forEachIndexed { index, song ->
                         val isDragging = index == draggingIndex
@@ -315,6 +318,11 @@ fun PlaylistDetailScreen(
                             }
                         }
                     }
+                }
+                com.harmonic.player.ui.common.FastScrollbarPlain(
+                    scrollState = playlistScrollState,
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                )
                 }
             }
         }

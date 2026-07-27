@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -470,7 +471,9 @@ internal fun QueueSheet(
             }
             return@ModalBottomSheet
         }
-        LazyColumn(modifier = Modifier.fillMaxWidth()) {
+        val queueListState = rememberLazyListState()
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(state = queueListState, modifier = Modifier.fillMaxSize()) {
             itemsIndexed(localQueue, key = { _, song -> song.id }) { index, song ->
                 val isCurrent = index == currentIndex
                 val isDragging = index == draggingIndex
@@ -552,6 +555,12 @@ internal fun QueueSheet(
                     }
                 }
             }
+        }
+        com.harmonic.player.ui.common.FastScrollbar(
+            listState = queueListState,
+            itemCount = localQueue.size,
+            modifier = Modifier.align(Alignment.CenterEnd)
+        )
         }
         Spacer(Modifier.height(16.dp))
     }
