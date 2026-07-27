@@ -77,7 +77,7 @@ class HarmonicWidget : GlanceAppWidget() {
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Text(
-                text = state.title ?: "Harmonic",
+                text = state.title ?: "Music Box",
                 style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 15.sp, color = white),
                 maxLines = 1,
                 modifier = GlanceModifier

@@ -19,22 +19,30 @@ interface SongDao {
            "OR artist LIKE '%' || :query || '%' OR album LIKE '%' || :query || '%')")
     fun search(query: String): Flow<List<Song>>
 
-    @Query("SELECT DISTINCT artist FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY artist COLLATE NOCASE ASC")
+    // COLLATE NOCASE no agrupamento (não só na ordenação) — sem isso,
+    // "Metallica" e "metallica" (tags inconsistentes entre arquivos do
+    // mesmo artista, bem comum em bibliotecas reais) contavam como dois
+    // artistas diferentes e apareciam duas vezes na lista.
+    @Query("SELECT artist FROM songs WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 GROUP BY artist COLLATE NOCASE ORDER BY artist COLLATE NOCASE ASC")
     fun getArtists(): Flow<List<String>>
 
     @Query("""
         SELECT artist AS name, COUNT(*) AS songCount, COUNT(DISTINCT albumId) AS albumCount, SUM(playCount) AS playCount
         FROM songs
         WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0
-        GROUP BY artist
+        GROUP BY artist COLLATE NOCASE
         ORDER BY artist COLLATE NOCASE ASC
     """)
     fun getArtistSummaries(): Flow<List<ArtistSummary>>
 
-    @Query("SELECT * FROM songs WHERE artist = :artist AND isHidden = 0 LIMIT 1")
+    @Query("SELECT * FROM songs WHERE artist = :artist COLLATE NOCASE AND isHidden = 0 LIMIT 1")
     suspend fun getFirstSongForArtist(artist: String): Song?
 
-    @Query("SELECT * FROM songs WHERE artist = :artist AND folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY album, trackNumber")
+    // COLLATE NOCASE aqui também — sem isso, um artista com tags em
+    // capitalização diferente entre arquivos (comum em bibliotecas reais)
+    // aparecia certo na lista (já agrupado por getArtistSummaries), mas ao
+    // abrir a página dele só metade das músicas apareciam.
+    @Query("SELECT * FROM songs WHERE artist = :artist COLLATE NOCASE AND folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0 ORDER BY album, trackNumber")
     fun getSongsByArtist(artist: String): Flow<List<Song>>
 
     @Query("""
@@ -116,7 +124,10 @@ interface SongDao {
 
     // ---------- Artistas / álbuns (renomear, excluir, favoritar) ----------
 
-    @Query("UPDATE songs SET artist = :newName WHERE artist = :oldName")
+    // COLLATE NOCASE — renomear pega todas as variantes de capitalização
+    // de uma vez (ex: "Metallica" e "METALLICA" viram uma coisa só), então
+    // dá pra consertar um artista duplicado direto por aqui.
+    @Query("UPDATE songs SET artist = :newName WHERE artist = :oldName COLLATE NOCASE")
     suspend fun renameArtist(oldName: String, newName: String)
 
     @Query("DELETE FROM songs WHERE artist = :artist")

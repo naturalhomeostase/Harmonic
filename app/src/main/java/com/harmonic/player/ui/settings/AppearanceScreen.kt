@@ -219,11 +219,19 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Uma única linha horizontal: gradientes primeiro, imagens
-            // inclusas logo em seguida (mesmo tamanho de cartão, rolagem
-            // lateral só), e o card "da galeria" no final — transparente,
-            // só com um "+", pra convidar a escolher uma foto própria sem
-            // brigar visualmente com as opções já prontas.
+            // Antes era uma ÚNICA linha rolável misturando gradientes,
+            // imagens prontas e o "+" da galeria no final — o usuário só
+            // descobria que dava pra escolher uma foto própria se
+            // arrastasse até o fim, sem nenhuma pista de que havia mais
+            // opções ali. Separado em duas seções com título (Gradientes /
+            // Imagens), e o "+" fica logo ao lado do título "Imagens" —
+            // sempre visível, sem precisar adivinhar.
+            Text(
+                "Gradientes",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
             androidx.compose.foundation.lazy.LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 4.dp)
@@ -290,7 +298,32 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                         )
                     }
                 }
+            }
 
+            Spacer(Modifier.height(20.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Imagens",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                // O "+" agora mora aqui, colado no título — visível na
+                // hora, sem precisar arrastar a lista até o fim pra
+                // descobrir que dá pra escolher uma foto da galeria.
+                IconButton(onClick = { pickImageLauncher.launch("image/*") }) {
+                    Icon(Icons.Filled.Add, contentDescription = "Escolher imagem da galeria", tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(vertical = 4.dp)
+            ) {
                 items(DefaultWallpaper.values().toList()) { wallpaper ->
                     val isSelected = currentCustomBg == null && currentWallpaper == wallpaper.name
                     Box(
@@ -343,25 +376,18 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 }
 
                 item {
-                    // Card "da sua galeria" — fundo transparente com borda
-                    // e "+" na cor de destaque, pra ficar claro que é uma
-                    // ação diferente das opções prontas ao lado, sem ser um
-                    // bloco sólido chamando mais atenção que elas.
-                    val isSelected = currentCustomBg != null
-                    Box(
-                        modifier = Modifier
-                            .size(width = 88.dp, height = 120.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.Transparent)
-                            .border(
-                                1.5.dp,
-                                MaterialTheme.colorScheme.primary.copy(alpha = if (isSelected) 1f else 0.5f),
-                                RoundedCornerShape(16.dp)
-                            )
-                            .clickable { pickImageLauncher.launch("image/*") },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isSelected && currentCustomBg != null) {
+                    // Sua foto já escolhida (se houver) continua aparecendo
+                    // como um card dentro da linha de Imagens, marcado como
+                    // selecionado — só o "+" pra ESCOLHER uma nova foto que
+                    // se mudou pra cima, ao lado do título.
+                    if (currentCustomBg != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 88.dp, height = 120.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+                                .clickable { pickImageLauncher.launch("image/*") }
+                        ) {
                             AsyncImage(
                                 model = Uri.parse(currentCustomBg),
                                 contentDescription = "Sua foto",
@@ -380,16 +406,6 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
-                            }
-                        } else {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Filled.Add, contentDescription = "Escolher da galeria", tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    "Da galeria",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
                             }
                         }
                     }
@@ -563,7 +579,7 @@ private fun AppearancePreviewMockup(
         }
 
         Column(modifier = Modifier.fillMaxSize().padding(14.dp)) {
-            Text("Harmonic", color = accentColor, style = MaterialTheme.typography.titleSmall)
+            Text("Music Box", color = accentColor, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(10.dp))
 
             // Abinha falsa, só pra dar o contexto visual do menu horizontal
@@ -805,9 +821,19 @@ private suspend fun accentFromUri(context: android.content.Context, uriString: S
  */
 private fun accentFromGradient(theme: com.harmonic.player.data.GradientTheme): Color {
     val hsv = FloatArray(3)
+    // Antes só olhava a SATURAÇÃO (hsv[1]) pra escolher a cor "mais viva"
+    // do gradiente — mas saturação sozinha não basta: um azul-marinho quase
+    // preto (ex: #020024) tem saturação MÁXIMA no HSV mesmo parecendo preto
+    // a olho nu, porque saturação é independente do quão escura a cor é.
+    // Isso fazia temas como "Meia-noite", "Oceano" e "Rosé" escolherem o
+    // tom escuro-demais como destaque em vez do tom vivo de verdade — daí
+    // o ajuste de legibilidade (que clareia cores escuras) resultava numa
+    // cor "suja"/opaca (cinza-arroxeado) em vez de um azul ou rosa bonito.
+    // Multiplicando saturação pelo brilho (hsv[2]), uma cor escura demais
+    // nunca ganha da vibrante de verdade.
     val mostVivid = theme.colorsArgb.maxByOrNull { argb ->
         android.graphics.Color.colorToHSV(argb.toInt(), hsv)
-        hsv[1] // saturação: 0 (cinza) a 1 (bem viva)
+        hsv[1] * hsv[2] // saturação × brilho
     } ?: theme.colorsArgb.first()
     return adjustAccentForReadability(Color(mostVivid))
 }

@@ -58,7 +58,8 @@ data class PendingPlayRequest(
     val songs: List<Song>,
     val startIndex: Int,
     val sourceKey: String,
-    val sourceLabel: String
+    val sourceLabel: String,
+    val shuffled: Boolean = false
 )
 
 /**
@@ -200,7 +201,7 @@ class PlayerController(
         }
     }
 
-    fun playQueue(songs: List<Song>, startIndex: Int, sourceKey: String = "default") {
+    fun playQueue(songs: List<Song>, startIndex: Int, sourceKey: String = "default", shuffled: Boolean? = null) {
         val items = songs.map { it.toMediaItem() }
         _uiState.value = _uiState.value.copy(
             queue = songs,
@@ -213,6 +214,21 @@ class PlayerController(
         val startPositionMs = songs.getOrNull(startIndex)?.trimStartMs?.takeIf { it > 0 } ?: 0L
         controller?.setMediaItems(items, startIndex, startPositionMs)
         controller?.prepare()
+        // `shuffled == null` (o caso comum — tocar uma música tocando em
+        // qualquer lista normal) deixa o modo aleatório do jeito que já
+        // estava, sem mexer nele. Só quando um chamador pede explicitamente
+        // (o botão "Aleatório"/"Aleatório: tudo", ou o reset de contexto em
+        // confirmPendingPlay) é que a gente liga/desliga de verdade —
+        // antes, os botões de "Aleatório" da Biblioteca só chamavam
+        // `songs.shuffled()` e tocavam essa lista congelada como fila
+        // normal: a primeira música até saía numa ordem aleatória, mas o
+        // modo aleatório do player continuava OFF (o ícone em "Tocando
+        // agora" não acendia, e pular música seguia a ordem congelada, não
+        // uma ordem aleatória de verdade a cada vez).
+        if (shuffled != null) {
+            controller?.shuffleModeEnabled = shuffled
+            _uiState.value = _uiState.value.copy(shuffleEnabled = shuffled)
+        }
         controller?.play()
         persistQueueSnapshot()
     }
@@ -226,25 +242,37 @@ class PlayerController(
      * Quando não há conflito real (mesmo contexto, ou nada tocando ainda,
      * ou shuffle/repeat já desligados), toca direto sem perguntar nada.
      */
-    fun requestPlayQueue(songs: List<Song>, startIndex: Int, sourceKey: String, sourceLabel: String) {
+    fun requestPlayQueue(songs: List<Song>, startIndex: Int, sourceKey: String, sourceLabel: String, shuffled: Boolean? = null) {
         val state = _uiState.value
         val hasActiveModifiers = state.shuffleEnabled || state.repeatMode != Player.REPEAT_MODE_OFF
         val isDifferentContext = state.sourceKey != null && state.sourceKey != sourceKey && state.queue.isNotEmpty()
         if (hasActiveModifiers && isDifferentContext) {
-            _pendingPlayRequest.value = PendingPlayRequest(songs, startIndex, sourceKey, sourceLabel)
+            _pendingPlayRequest.value = PendingPlayRequest(songs, startIndex, sourceKey, sourceLabel, shuffled ?: false)
         } else {
-            playQueue(songs, startIndex, sourceKey)
+            playQueue(songs, startIndex, sourceKey, shuffled)
         }
+    }
+
+    /**
+     * Ponto de entrada único pros botões "Aleatório"/"Aleatório: tudo" da
+     * Biblioteca (Músicas, Favoritas, artista, álbum, pasta, playlist) —
+     * toca a lista NA ORDEM ORIGINAL (pra fila mostrar a ordem "de
+     * verdade" de onde veio) com o aleatório de verdade já ligado, em vez
+     * de cada botão embaralhar a lista manualmente do seu próprio jeito.
+     */
+    fun requestPlayQueueShuffled(songs: List<Song>, sourceKey: String, sourceLabel: String) {
+        requestPlayQueue(songs, 0, sourceKey, sourceLabel, shuffled = true)
     }
 
     fun confirmPendingPlay() {
         val request = _pendingPlayRequest.value ?: return
         // Reseta shuffle/repeat do contexto anterior — o novo play() já
-        // começa "do zero", na ordem padrão de onde o usuário está agora.
-        controller?.shuffleModeEnabled = false
+        // começa "do zero", na ordem padrão de onde o usuário está agora
+        // (fica ligado nesse "do zero" só se o próprio pedido pendente
+        // pediu aleatório — ex: veio do botão "Aleatório").
         controller?.repeatMode = Player.REPEAT_MODE_OFF
-        _uiState.value = _uiState.value.copy(shuffleEnabled = false, repeatMode = Player.REPEAT_MODE_OFF)
-        playQueue(request.songs, request.startIndex, request.sourceKey)
+        _uiState.value = _uiState.value.copy(repeatMode = Player.REPEAT_MODE_OFF)
+        playQueue(request.songs, request.startIndex, request.sourceKey, request.shuffled)
         _pendingPlayRequest.value = null
     }
 
@@ -311,6 +339,25 @@ class PlayerController(
             c.play()
             _uiState.value = _uiState.value.copy(isPlaying = true)
         }
+    }
+
+    /**
+     * Diferente de pausar: para de vez, esvazia a fila e derruba a
+     * notificação/serviço em primeiro plano — como fechar o player.
+     * O miniplayer some sozinho depois (ele só aparece quando
+     * `currentSong != null`).
+     */
+    fun stop() {
+        controller?.stop()
+        controller?.clearMediaItems()
+        _uiState.value = _uiState.value.copy(
+            isPlaying = false,
+            currentSong = null,
+            currentIndex = -1,
+            queue = emptyList(),
+            manuallyQueuedSongIds = emptySet()
+        )
+        persistQueueSnapshot()
     }
 
     fun skipNext() = controller?.seekToNextMediaItem()

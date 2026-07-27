@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ fun MiniPlayer(
     state: PlaybackUiState,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
+    onStop: () -> Unit,
     onOpenNowPlaying: () -> Unit
 ) {
     val song = state.currentSong ?: return
@@ -138,6 +140,17 @@ fun MiniPlayer(
             // Cor de destaque + um brilho suave atrás — ajuda o mini player
             // a se destacar um pouco da lista de músicas logo acima dele.
             val accent = MaterialTheme.colorScheme.primary
+            // Botão de stop: menor que o play/pause (mesmo porte visual do
+            // skip next), e sem o glow por trás — é uma ação mais "seca"
+            // (para e some o mini player), não precisa do mesmo destaque.
+            IconButton(onClick = onStop, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Filled.Stop,
+                    contentDescription = "Parar",
+                    tint = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
                 Box(
                     modifier = Modifier

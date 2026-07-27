@@ -290,6 +290,7 @@ fun LibraryScreen(
                 state = playbackState,
                 onTogglePlayPause = { playerController.togglePlayPause() },
                 onSkipNext = { playerController.skipNext() },
+                onStop = { playerController.stop() },
                 onOpenNowPlaying = onOpenNowPlaying
             )
         },
@@ -491,16 +492,17 @@ fun LibraryScreen(
                                         tab.label,
                                         // Sem gradiente de letras: a aba
                                         // selecionada usa a cor de destaque
-                                        // do tema em vez de branco puro, pra
-                                        // continuar se destacando das outras.
-                                        color = if (isSelected) accentColor else Color.White.copy(alpha = 0.55f),
+                                        // do tema, e as não selecionadas
+                                        // agora ficam branco sólido (antes
+                                        // era um branco meio transparente).
+                                        color = if (isSelected) accentColor else Color.White,
                                         fontSize = if (isSelected) 15.sp else 13.sp,
                                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                                     )
                                 }
                             },
                             selectedContentColor = accentColor,
-                            unselectedContentColor = Color.White.copy(alpha = 0.55f)
+                            unselectedContentColor = Color.White
                         )
                     }
                 }
@@ -550,8 +552,8 @@ fun LibraryScreen(
                         when (selectedTab) {
                             LibraryTab.SONGS -> {
                                 val allSongs by dao.getAllSongs().collectAsState(initial = emptyList())
-                                IconButton(onClick = { playerController.requestPlayQueue(allSongs.shuffled(), 0, "songs", "Músicas") }, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                                IconButton(onClick = { playerController.requestPlayQueueShuffled(allSongs, "songs", "Músicas") }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Filled.Shuffle, contentDescription = "Aleatório", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                                 }
                                 com.harmonic.player.ui.common.SortMenuButton(
                                     options = songSortOptions, selectedKey = sortKey, ascending = sortAscending,
@@ -560,8 +562,8 @@ fun LibraryScreen(
                             }
                             LibraryTab.FAVORITES -> {
                                 val allFavorites by dao.getFavorites().collectAsState(initial = emptyList())
-                                IconButton(onClick = { playerController.requestPlayQueue(allFavorites.shuffled(), 0, "favorites", "Favoritas") }, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                                IconButton(onClick = { playerController.requestPlayQueueShuffled(allFavorites, "favorites", "Favoritas") }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Filled.Shuffle, contentDescription = "Aleatório", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                                 }
                             }
                             LibraryTab.ALBUMS -> {
@@ -692,8 +694,8 @@ fun LibraryScreen(
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
                                     playerController.requestPlayQueue(songs, 0, "artist:$artistName", artistName)
                                 },
-                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Shuffle") {
-                                    playerController.requestPlayQueue(songs.shuffled(), 0, "artist:$artistName", artistName)
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Aleatório") {
+                                    playerController.requestPlayQueueShuffled(songs, "artist:$artistName", artistName)
                                 },
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
                                     songs.forEach { playerController.addToQueueEnd(it) }
@@ -842,8 +844,8 @@ fun LibraryScreen(
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
                                     playerController.requestPlayQueue(songs, 0, "album:$albumId", albumName)
                                 },
-                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Shuffle") {
-                                    playerController.requestPlayQueue(songs.shuffled(), 0, "album:$albumId", albumName)
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Aleatório") {
+                                    playerController.requestPlayQueueShuffled(songs, "album:$albumId", albumName)
                                 },
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
                                     songs.forEach { playerController.addToQueueEnd(it) }
@@ -931,8 +933,8 @@ fun LibraryScreen(
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
                                     playerController.requestPlayQueue(songs, 0, "folder:$folder", folder.substringAfterLast('/'))
                                 },
-                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Shuffle all") {
-                                    playerController.requestPlayQueue(songs.shuffled(), 0, "folder:$folder", folder.substringAfterLast('/'))
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Aleatório: tudo") {
+                                    playerController.requestPlayQueueShuffled(songs, "folder:$folder", folder.substringAfterLast('/'))
                                 },
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlaylistAdd, "Adicionar à playlist") {
                                     bulkAddSongs = songs
@@ -1282,8 +1284,8 @@ fun LibraryScreen(
                     playerController.requestPlayQueue(songs, 0, "album:${album.albumId}", album.album)
                     quickMenuAlbum = null
                 },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Shuffle") {
-                    playerController.requestPlayQueue(songs.shuffled(), 0, "album:${album.albumId}", album.album)
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Aleatório") {
+                    playerController.requestPlayQueueShuffled(songs, "album:${album.albumId}", album.album)
                     quickMenuAlbum = null
                 },
                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
@@ -1338,8 +1340,8 @@ fun LibraryScreen(
                     playerController.requestPlayQueue(songs, 0, "artist:$artistName", artistName)
                     quickMenuArtist = null
                 },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Shuffle") {
-                    playerController.requestPlayQueue(songs.shuffled(), 0, "artist:$artistName", artistName)
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Aleatório") {
+                    playerController.requestPlayQueueShuffled(songs, "artist:$artistName", artistName)
                     quickMenuArtist = null
                 },
                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
@@ -1394,8 +1396,8 @@ fun LibraryScreen(
                     playerController.requestPlayQueue(songs, 0, "folder:$folder", folderName)
                     quickMenuFolder = null
                 },
-                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Shuffle all") {
-                    playerController.requestPlayQueue(songs.shuffled(), 0, "folder:$folder", folderName)
+                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Aleatório: tudo") {
+                    playerController.requestPlayQueueShuffled(songs, "folder:$folder", folderName)
                     quickMenuFolder = null
                 },
                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlaylistAdd, "Adicionar à playlist") {
@@ -1691,12 +1693,60 @@ private fun SongList(
     sortSignature: String = ""
 ) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     // Toca na capa de uma música pra marcar/desmarcar ela pra uma ação em
     // lote (fila, favoritos, playlist) — reseta se a lista em si mudar
     // (ex: trocou de aba), pra não ficar seleção "fantasma" de outra lista.
     var selectedIds by remember(songs) { mutableStateOf(emptySet<Long>()) }
     var showPlaylistPickerForSelection by remember { mutableStateOf(false) }
+    var showDeleteSelectedConfirm by remember { mutableStateOf(false) }
     val selectedSongs = remember(songs, selectedIds) { songs.filter { it.id in selectedIds } }
+
+    // Exclusão em lote — Android 11+ (API 30) mostra UM ÚNICO diálogo de
+    // confirmação do sistema pra todas as músicas de uma vez
+    // (createDeleteRequest aceita uma lista de Uris), em vez de precisar
+    // aprovar uma por uma. Aprovar aqui já apaga o arquivo de verdade — a
+    // limpeza do banco local roda depois (tanto otimista, logo abaixo,
+    // quanto de qualquer forma pelo próprio scan reativo do MediaStore).
+    val batchDeleteLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val idsToRemove = selectedSongs.map { it.id }
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                idsToRemove.forEach { dao.deleteSongById(it) }
+            }
+            selectedIds = emptySet()
+        }
+    }
+
+    fun deleteSelectedSongs() {
+        val toDelete = selectedSongs
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val uris = toDelete.map { song ->
+                android.content.ContentUris.withAppendedId(
+                    android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, song.mediaStoreId
+                )
+            }
+            try {
+                uris.forEach { context.contentResolver.delete(it, null, null) }
+                toDelete.forEach { dao.deleteSongById(it.id) }
+                selectedIds = emptySet()
+            } catch (e: SecurityException) {
+                // Android 10 e anteriores: RecoverableSecurityException é por
+                // item, não dá pra agrupar — cai pro fluxo em lote do 11+.
+                val intentSender = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    android.provider.MediaStore.createDeleteRequest(context.contentResolver, uris).intentSender
+                } else {
+                    (e as? android.app.RecoverableSecurityException)?.userAction?.actionIntent?.intentSender
+                }
+                intentSender?.let {
+                    batchDeleteLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build())
+                }
+            } catch (e: Exception) { /* nada a fazer, evita derrubar o app */ }
+        }
+    }
+
     val listState = rememberLazyListState()
     // Sem isso, trocar o critério ou a direção da ordenação (ex: pra
     // "Decrescente") fazia a lista "pular" pro fim da tela sozinha: o
@@ -1722,7 +1772,8 @@ private fun SongList(
                     scope.launch { selectedSongs.forEach { dao.setFavorite(it.id, true) } }
                     selectedIds = emptySet()
                 },
-                onAddToPlaylist = { showPlaylistPickerForSelection = true }
+                onAddToPlaylist = { showPlaylistPickerForSelection = true },
+                onDelete = { showDeleteSelectedConfirm = true }
             )
         }
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -1792,6 +1843,23 @@ private fun SongList(
             }
         )
     }
+
+    if (showDeleteSelectedConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteSelectedConfirm = false },
+            title = { Text("Excluir ${selectedIds.size} música(s)?") },
+            text = { Text("Isso apaga os arquivos de verdade do aparelho, não só da lista. Não dá pra desfazer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteSelectedConfirm = false
+                    deleteSelectedSongs()
+                }) { Text("Excluir", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteSelectedConfirm = false }) { Text("Cancelar") }
+            }
+        )
+    }
 }
 
 /**
@@ -1805,7 +1873,8 @@ private fun SelectionActionBar(
     onClose: () -> Unit,
     onAddToQueue: () -> Unit,
     onFavorite: () -> Unit,
-    onAddToPlaylist: () -> Unit
+    onAddToPlaylist: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -1831,6 +1900,9 @@ private fun SelectionActionBar(
         }
         IconButton(onClick = onAddToPlaylist) {
             Icon(Icons.Filled.PlaylistAdd, contentDescription = "Adicionar à playlist", tint = MaterialTheme.colorScheme.primary)
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Filled.Delete, contentDescription = "Excluir", tint = MaterialTheme.colorScheme.error)
         }
     }
 }
@@ -2236,13 +2308,27 @@ private fun SongOptionsSheet(
             },
             com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.VisibilityOff, "Ocultar música") {
                 showActionSheet = false
-                scope.launch { dao.setSongHidden(song.id, true) }
-                onDismiss()
+                // onDismiss() DEPOIS do trabalho assíncrono terminar, não
+                // antes — onDismiss() tira este composable da árvore, o
+                // que cancela o `scope` (rememberCoroutineScope é preso ao
+                // ciclo de vida de quem o criou). Chamando antes, o
+                // scope.launch quase sempre é cancelado ANTES de rodar
+                // sequer a primeira linha (o launch só executa no próximo
+                // "tick", e o onDismiss() síncrono logo em seguida já
+                // derruba o composable antes disso). Isso valia pra
+                // "Ocultar música", "Ocultar álbum", salvar tags, renomear
+                // arquivo e cortar música — todos tinham essa mesma corrida.
+                scope.launch {
+                    dao.setSongHidden(song.id, true)
+                    onDismiss()
+                }
             },
             com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.VisibilityOff, "Ocultar álbum inteiro") {
                 showActionSheet = false
-                scope.launch { dao.hideSongsByAlbum(song.albumId) }
-                onDismiss()
+                scope.launch {
+                    dao.hideSongsByAlbum(song.albumId)
+                    onDismiss()
+                }
             },
             com.harmonic.player.ui.common.ActionSheetItem(
                 Icons.Filled.Delete, "Excluir",
@@ -2391,9 +2477,23 @@ private fun SongOptionsSheet(
                     enabled = !loading && title.isNotBlank(),
                     onClick = {
                         val values = com.harmonic.player.data.TagEditor.TagValues(title, artist, album, genre, year, track)
-                        scope.launch { saveTags(values) }
-                        showEditTagsDialog = false
-                        onDismiss()
+                        // showEditTagsDialog/onDismiss só DEPOIS que saveTags
+                        // termina — essa era a causa real de "salva, mas não
+                        // aparece no app" (às vezes nem o Toast aparecia):
+                        // onDismiss() fecha este composable, o que cancela o
+                        // `scope` (rememberCoroutineScope morre com quem
+                        // criou). Chamando onDismiss() logo depois do
+                        // scope.launch, o scope quase sempre já estava
+                        // cancelado antes mesmo do saveTags rodar sua
+                        // primeira linha — daí a tag às vezes gravava no
+                        // arquivo (quando a escrita corria por fora, tipo no
+                        // fluxo de permissão) mas o dao.updateSongMetadata()
+                        // e o Toast nunca rodavam.
+                        scope.launch {
+                            saveTags(values)
+                            showEditTagsDialog = false
+                            onDismiss()
+                        }
                     }
                 ) { Text("Salvar no arquivo") }
             },
@@ -2435,6 +2535,13 @@ private fun SongOptionsSheet(
                         val values = android.content.ContentValues().apply {
                             put(android.provider.MediaStore.Audio.Media.DISPLAY_NAME, "${newFileName.trim()}.${song.format.lowercase()}")
                         }
+                        // onDismiss() só DEPOIS do bloco terminar (ver
+                        // explicação na mesma correção em "Salvar no
+                        // arquivo") — isso é o motivo mais provável de "não
+                        // consigo efetivamente renomear o arquivo": o
+                        // onDismiss() de antes cancelava o scope quase
+                        // sempre ANTES do contentResolver.update/
+                        // dao.updateSongPath rodarem.
                         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                             try {
                                 context.contentResolver.update(songUri, values, null, null)
@@ -2454,9 +2561,11 @@ private fun SongOptionsSheet(
                                     securityLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(intentSender).build())
                                 }
                             } catch (e: Exception) { /* ignora, evita derrubar o app */ }
+                            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                showEditFileNameDialog = false
+                                onDismiss()
+                            }
                         }
-                        showEditFileNameDialog = false
-                        onDismiss()
                     }
                 ) { Text("Renomear arquivo") }
             },

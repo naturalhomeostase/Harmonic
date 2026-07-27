@@ -164,12 +164,12 @@ fun PlaylistDetailScreen(
                         Text("Tocar")
                     }
                     IconButton(onClick = {
-                        playerController.requestPlayQueue(songs.shuffled(), 0, sourceKey, playlistName)
+                        playerController.requestPlayQueueShuffled(songs, sourceKey, playlistName)
                         onOpenNowPlaying()
                     }) {
                         Icon(
                             Icons.Filled.Shuffle,
-                            contentDescription = "Shuffle",
+                            contentDescription = "Aleatório",
                             tint = if (isThisPlaylistActive && playbackState.shuffleEnabled) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.85f)
                         )
                     }

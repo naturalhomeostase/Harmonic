@@ -436,7 +436,7 @@ fun NowPlayingScreen(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun QueueSheet(
+internal fun QueueSheet(
     queue: List<com.harmonic.player.data.Song>,
     currentIndex: Int,
     accent: Color,

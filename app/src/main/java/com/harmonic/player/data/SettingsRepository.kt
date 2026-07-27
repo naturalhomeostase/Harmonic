@@ -30,14 +30,10 @@ enum class GradientTheme(val label: String, val colorsArgb: List<Long>) {
     // Só essas 2 paradas (nada de azul aqui) — é o que fazia a cor de
     // destaque "vazar" pra azul ao escolher esse tema (ver clearAccentColor).
     APP_ICON("Music Box", listOf(0xFF000000, 0xFFE76895)),
-    // De volta a 2 paradas (como na v1) — a versão com 3 paradas ficava
-    // "suja"/menos nítida tanto como fundo quanto como gradiente de texto.
-    MIDNIGHT("Meia-noite", listOf(0xFF020024, 0xFF00B4DB)),
+    // Tirei os temas azuis, o rosa (Rosé) e o roxo (Neon) — eram
+    // exatamente os que ficavam com a cor de destaque opaca/estranha.
     SUNSET("Pôr do sol", listOf(0xFFFFD200, 0xFFDD2476)),
-    OCEAN("Oceano", listOf(0xFF000428, 0xFF00D4FF)),
     FOREST("Floresta", listOf(0xFF0F2027, 0xFF00C853)),
-    ROSE("Rosé", listOf(0xFF2C0E37, 0xFFFF6FB5)),
-    NEON("Neon", listOf(0xFF7303C0, 0xFFFDEFF9)),
     MONO("Mono (mais leve)", listOf(0xFF161616, 0xFF0A0A0A))
 }
 
