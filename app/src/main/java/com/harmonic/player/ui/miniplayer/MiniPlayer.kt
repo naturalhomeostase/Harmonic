@@ -140,16 +140,20 @@ fun MiniPlayer(
             // Cor de destaque + um brilho suave atrás — ajuda o mini player
             // a se destacar um pouco da lista de músicas logo acima dele.
             val accent = MaterialTheme.colorScheme.primary
-            // Botão de stop: menor que o play/pause (mesmo porte visual do
-            // skip next), e sem o glow por trás — é uma ação mais "seca"
-            // (para e some o mini player), não precisa do mesmo destaque.
-            IconButton(onClick = onStop, modifier = Modifier.size(40.dp)) {
-                Icon(
-                    Icons.Filled.Stop,
-                    contentDescription = "Parar",
-                    tint = Color.White.copy(alpha = 0.6f),
-                    modifier = Modifier.size(20.dp)
+            // Botão de stop agora com o mesmo tratamento visual dos outros
+            // dois (glow radial atrás + tingido na cor de destaque) — antes
+            // ele era menor e sem brilho, destoando dos outros dois.
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(
+                            Brush.radialGradient(listOf(accent.copy(alpha = 0.25f), Color.Transparent))
+                        )
                 )
+                IconButton(onClick = onStop, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.Stop, contentDescription = "Parar", tint = accent.copy(alpha = 0.9f))
+                }
             }
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
                 Box(

@@ -855,10 +855,23 @@ private fun accentFromGradient(theme: com.harmonic.player.data.GradientTheme): C
 private suspend fun copyImageToInternalStorage(context: android.content.Context, uri: Uri): String? =
     withContext(Dispatchers.IO) {
         try {
-            val destFile = File(context.filesDir, "custom_background.jpg")
+            // Nome de arquivo ÚNICO a cada foto escolhida (em vez de sempre
+            // "custom_background.jpg") — com um nome fixo, trocar de uma
+            // foto customizada pra OUTRA foto customizada não mudava nem o
+            // valor salvo (mesma string de caminho) nem a chave de cache do
+            // Coil, então a tela continuava mostrando a imagem antiga até
+            // reabrir o app (quando o processo recarregava e perdia o
+            // cache em memória). Só não atualizava na hora quando o antes
+            // era um tema pronto, porque aí o valor salvo genuinely mudava
+            // de "nenhum" pra um caminho novo.
+            val destFile = File(context.filesDir, "custom_background_${System.currentTimeMillis()}.jpg")
             context.contentResolver.openInputStream(uri)?.use { input ->
                 destFile.outputStream().use { output -> input.copyTo(output) }
             }
+            // Limpa fotos customizadas antigas pra não acumular arquivo
+            // órfão a cada troca.
+            context.filesDir.listFiles { f -> f.name.startsWith("custom_background_") && f.name != destFile.name }
+                ?.forEach { it.delete() }
             destFile.toURI().toString()
         } catch (e: Exception) {
             null

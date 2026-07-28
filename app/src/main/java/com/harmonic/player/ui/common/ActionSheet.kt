@@ -86,8 +86,14 @@ fun ActionSheet(
         }
         items.forEachIndexed { index, item ->
             DropdownMenuItem(
-                text = { Text(item.label, color = item.tint ?: onAccent) },
-                leadingIcon = { Icon(item.icon, contentDescription = null, tint = item.tint ?: onAccent) },
+                // "Excluir" (e outras ações antes marcadas com tint =
+                // DangerColor) agora usa a MESMA cor dos outros itens do
+                // menu — o vermelho fixo às vezes ficava pouco legível em
+                // cima de certas cores de destaque (o fundo do menu muda
+                // com o tema escolhido), e não tinha necessidade de ser
+                // vermelho pra começo de conversa.
+                text = { Text(item.label, color = onAccent) },
+                leadingIcon = { Icon(item.icon, contentDescription = null, tint = onAccent) },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 0.dp),
                 modifier = Modifier.heightIn(min = 40.dp),
                 onClick = item.onClick

@@ -3,9 +3,16 @@ package com.harmonic.player.data
 import android.content.Context
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.runBlocking
 
 private val Context.dataStore by preferencesDataStore(name = "harmonic_settings")
 
@@ -34,10 +41,35 @@ enum class GradientTheme(val label: String, val colorsArgb: List<Long>) {
     // exatamente os que ficavam com a cor de destaque opaca/estranha.
     SUNSET("Pôr do sol", listOf(0xFFFFD200, 0xFFDD2476)),
     FOREST("Floresta", listOf(0xFF0F2027, 0xFF00C853)),
-    MONO("Mono (mais leve)", listOf(0xFF161616, 0xFF0A0A0A))
+    MONO("Mono (mais leve)", listOf(0xFF161616, 0xFF0A0A0A)),
+    // Os 3 abaixo voltaram a ter cores mais vivas/variadas (incluindo azul
+    // e roxo de novo) porque o problema de opacidade era no GRADIENTE DO
+    // TEXTO reaproveitando a cor crua do tema, e isso já foi corrigido na
+    // origem (LibraryScreen.readableGradientTextColor) — não precisa mais
+    // evitar certas cores de tema pra fugir do sintoma.
+    AURORA("Aurora", listOf(0xFF00C9A7, 0xFF845EC2)),
+    OCEAN("Oceano", listOf(0xFF002B5B, 0xFF00B4D8)),
+    BERRY("Vinho", listOf(0xFF3A0CA3, 0xFFF72585))
 }
 
 class SettingsRepository(private val context: Context) {
+    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Lê o DataStore uma vez, na hora (bloqueando só a criação do
+    // repositório, que já acontece bem cedo — antes do primeiro frame da
+    // Activity) — e a partir daí mantém sempre o valor mais recente em
+    // memória. Sem isso, TODA tela que faz `collectAsState(initial = ...)`
+    // começa mostrando esse valor padrão "chutado" (tema/papel de parede
+    // padrão) até a primeira leitura assíncrona do disco terminar — daí o
+    // "glimpse" do tema padrão antes do tema escolhido aparecer, no
+    // primeiro frame do app. Como esse StateFlow já nasce com o valor REAL
+    // (lido de forma síncrona aqui), a primeira composição já usa o tema
+    // certo direto, sem flash nenhum.
+    private val data: StateFlow<Preferences> = context.dataStore.data.stateIn(
+        scope = repoScope,
+        started = SharingStarted.Eagerly,
+        initialValue = runBlocking { context.dataStore.data.first() }
+    )
 
     private object Keys {
         val ACCENT_COLOR = intPreferencesKey("accent_color")
@@ -77,37 +109,37 @@ class SettingsRepository(private val context: Context) {
         val SLEEP_TIMER_END_AT = longPreferencesKey("sleep_timer_end_at") // epoch ms, 0 = desativado
     }
 
-    val accentColor: Flow<Int?> = context.dataStore.data.map { it[Keys.ACCENT_COLOR] }
-    val useAlbumArtColor: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_ALBUM_ART_COLOR] ?: true }
-    val backgroundUri: Flow<String?> = context.dataStore.data.map { it[Keys.BACKGROUND_URI] }
-    val defaultWallpaper: Flow<String?> = context.dataStore.data.map { it[Keys.DEFAULT_WALLPAPER] }
-    val gradientTheme: Flow<String?> = context.dataStore.data.map { it[Keys.GRADIENT_THEME] }
-    val backgroundBlurEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.BACKGROUND_BLUR_ENABLED] ?: false }
-    val backgroundBlurRadius: Flow<Int> = context.dataStore.data.map { it[Keys.BACKGROUND_BLUR_RADIUS] ?: 10 }
-    val backgroundScrimAlpha: Flow<Int> = context.dataStore.data.map { it[Keys.BACKGROUND_SCRIM_ALPHA] ?: 45 }
+    val accentColor: Flow<Int?> = data.map { it[Keys.ACCENT_COLOR] }
+    val useAlbumArtColor: Flow<Boolean> = data.map { it[Keys.USE_ALBUM_ART_COLOR] ?: true }
+    val backgroundUri: Flow<String?> = data.map { it[Keys.BACKGROUND_URI] }
+    val defaultWallpaper: Flow<String?> = data.map { it[Keys.DEFAULT_WALLPAPER] }
+    val gradientTheme: Flow<String?> = data.map { it[Keys.GRADIENT_THEME] }
+    val backgroundBlurEnabled: Flow<Boolean> = data.map { it[Keys.BACKGROUND_BLUR_ENABLED] ?: false }
+    val backgroundBlurRadius: Flow<Int> = data.map { it[Keys.BACKGROUND_BLUR_RADIUS] ?: 10 }
+    val backgroundScrimAlpha: Flow<Int> = data.map { it[Keys.BACKGROUND_SCRIM_ALPHA] ?: 45 }
     // Gradiente também nos títulos das listas (opcional) — usa as mesmas
     // cores do tema de gradiente ativo (ou "Meia-noite" se o fundo for uma
     // imagem/foto, já que nesse caso não há uma paleta de gradiente ativa).
-    val titleGradientEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_ENABLED] ?: false }
+    val titleGradientEnabled: Flow<Boolean> = data.map { it[Keys.TITLE_GRADIENT_ENABLED] ?: false }
     // Cores do gradiente de título escolhidas livremente pelo usuário (roda de
     // cores, não presets). null nos dois = usa as cores do tema de fundo
     // ativo, como antes — assim quem nunca mexeu nisso não percebe diferença.
-    val titleGradientColorStart: Flow<Int?> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_COLOR_START] }
-    val titleGradientColorEnd: Flow<Int?> = context.dataStore.data.map { it[Keys.TITLE_GRADIENT_COLOR_END] }
-    val albumGridView: Flow<Boolean> = context.dataStore.data.map { it[Keys.ALBUM_GRID_VIEW] ?: false }
-    val artistGridView: Flow<Boolean> = context.dataStore.data.map { it[Keys.ARTIST_GRID_VIEW] ?: false }
+    val titleGradientColorStart: Flow<Int?> = data.map { it[Keys.TITLE_GRADIENT_COLOR_START] }
+    val titleGradientColorEnd: Flow<Int?> = data.map { it[Keys.TITLE_GRADIENT_COLOR_END] }
+    val albumGridView: Flow<Boolean> = data.map { it[Keys.ALBUM_GRID_VIEW] ?: false }
+    val artistGridView: Flow<Boolean> = data.map { it[Keys.ARTIST_GRID_VIEW] ?: false }
     /** Nomes das LibraryTab (enum) que o usuário escondeu da barra de abas. */
-    val hiddenTabs: Flow<Set<String>> = context.dataStore.data.map { it[Keys.HIDDEN_TABS] ?: emptySet() }
+    val hiddenTabs: Flow<Set<String>> = data.map { it[Keys.HIDDEN_TABS] ?: emptySet() }
     /** "VINYL" | "STATIC" | "FULLSCREEN" — como a capa aparece na tela Agora Tocando. */
-    val coverDisplayMode: Flow<String> = context.dataStore.data.map { it[Keys.COVER_DISPLAY_MODE] ?: "VINYL" }
+    val coverDisplayMode: Flow<String> = data.map { it[Keys.COVER_DISPLAY_MODE] ?: "VINYL" }
     // Padrão "dark", não "system": o app sempre mostra uma imagem de fundo
     // com véu escuro por cima, então texto escuro (o que aconteceria no
     // tema claro do sistema) fica ilegível. Continua possível escolher
     // "light" manualmente se a pessoa realmente quiser.
-    val themeMode: Flow<String> = context.dataStore.data.map { it[Keys.THEME_MODE] ?: "dark" }
-    val ignoredFolders: Flow<Set<String>> = context.dataStore.data.map { it[Keys.IGNORED_FOLDERS] ?: emptySet() }
-    val crossfadeMs: Flow<Int> = context.dataStore.data.map { it[Keys.CROSSFADE_MS] ?: 0 }
-    val replayGainEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.REPLAY_GAIN_ENABLED] ?: false }
+    val themeMode: Flow<String> = data.map { it[Keys.THEME_MODE] ?: "dark" }
+    val ignoredFolders: Flow<Set<String>> = data.map { it[Keys.IGNORED_FOLDERS] ?: emptySet() }
+    val crossfadeMs: Flow<Int> = data.map { it[Keys.CROSSFADE_MS] ?: 0 }
+    val replayGainEnabled: Flow<Boolean> = data.map { it[Keys.REPLAY_GAIN_ENABLED] ?: false }
 
     suspend fun setAccentColor(colorArgb: Int) {
         context.dataStore.edit { it[Keys.ACCENT_COLOR] = colorArgb; it[Keys.USE_ALBUM_ART_COLOR] = false }
@@ -226,14 +258,14 @@ class SettingsRepository(private val context: Context) {
 
     // ---------- Equalizador ----------
 
-    val eqEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.EQ_ENABLED] ?: false }
-    val eqBandLevels: Flow<List<Int>> = context.dataStore.data.map { prefs ->
+    val eqEnabled: Flow<Boolean> = data.map { it[Keys.EQ_ENABLED] ?: false }
+    val eqBandLevels: Flow<List<Int>> = data.map { prefs ->
         prefs[Keys.EQ_BAND_LEVELS]?.split(",")?.mapNotNull { it.toIntOrNull() } ?: List(10) { 0 }
     }
-    val eqPresetName: Flow<String> = context.dataStore.data.map { it[Keys.EQ_PRESET_NAME] ?: "Personalizado" }
-    val bassBoostStrength: Flow<Int> = context.dataStore.data.map { it[Keys.BASS_BOOST_STRENGTH] ?: 0 }
-    val virtualizerStrength: Flow<Int> = context.dataStore.data.map { it[Keys.VIRTUALIZER_STRENGTH] ?: 0 }
-    val reverbPreset: Flow<Int> = context.dataStore.data.map { it[Keys.REVERB_PRESET] ?: 0 }
+    val eqPresetName: Flow<String> = data.map { it[Keys.EQ_PRESET_NAME] ?: "Personalizado" }
+    val bassBoostStrength: Flow<Int> = data.map { it[Keys.BASS_BOOST_STRENGTH] ?: 0 }
+    val virtualizerStrength: Flow<Int> = data.map { it[Keys.VIRTUALIZER_STRENGTH] ?: 0 }
+    val reverbPreset: Flow<Int> = data.map { it[Keys.REVERB_PRESET] ?: 0 }
 
     suspend fun setEqEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.EQ_ENABLED] = enabled }
@@ -282,7 +314,7 @@ class SettingsRepository(private val context: Context) {
 
     // ---------- Sleep timer ----------
 
-    val sleepTimerEndAt: Flow<Long> = context.dataStore.data.map { it[Keys.SLEEP_TIMER_END_AT] ?: 0L }
+    val sleepTimerEndAt: Flow<Long> = data.map { it[Keys.SLEEP_TIMER_END_AT] ?: 0L }
 
     suspend fun setSleepTimerEndAt(epochMs: Long) {
         context.dataStore.edit { it[Keys.SLEEP_TIMER_END_AT] = epochMs }

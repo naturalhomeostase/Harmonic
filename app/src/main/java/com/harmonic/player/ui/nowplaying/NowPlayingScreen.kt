@@ -225,6 +225,27 @@ fun NowPlayingScreen(
                                    else Color.White.copy(alpha = 0.85f)
                         )
                     }
+                    if (showSleepTimerDialog) {
+                        // O diálogo existia como composable, mas nunca era
+                        // efetivamente chamado em lugar nenhum — por isso o
+                        // ícone parecia "não fazer nada" ao tocar.
+                        SleepTimerDialog(
+                            currentEndAt = state.sleepTimerEndAt,
+                            onDismiss = { showSleepTimerDialog = false },
+                            onSelectMinutes = { minutes ->
+                                playerController.startSleepTimer(minutes)
+                                showSleepTimerDialog = false
+                            },
+                            onSelectEndOfSong = {
+                                playerController.stopAtEndOfSong()
+                                showSleepTimerDialog = false
+                            },
+                            onCancel = {
+                                playerController.cancelSleepTimer()
+                                showSleepTimerDialog = false
+                            }
+                        )
+                    }
                     IconButton(onClick = onOpenEqualizer) {
                         Icon(Icons.Filled.Equalizer, contentDescription = "Equalizador", tint = Color.White.copy(alpha = 0.85f))
                     }
@@ -314,7 +335,19 @@ fun NowPlayingScreen(
                     playerController.seekTo(sliderPosition.toLong())
                     isUserSeeking = false
                 },
-                valueRange = 0f..(state.durationMs.coerceAtLeast(1)).toFloat()
+                valueRange = 0f..(state.durationMs.coerceAtLeast(1)).toFloat(),
+                // A trilha "andada" (mais grossa) já usa a cor do tema via
+                // MaterialTheme.colorScheme.primary (== pageAccent) por
+                // padrão. Mas a trilha "restante" (mais fina) não tinha cor
+                // customizada e caía no cinza padrão do Material3
+                // (surfaceVariant) — destoando do resto da tela, que segue
+                // a cor extraída da capa. Agora ela usa essa MESMA cor,
+                // só bem mais discreta (baixa opacidade).
+                colors = SliderDefaults.colors(
+                    thumbColor = pageAccent,
+                    activeTrackColor = pageAccent,
+                    inactiveTrackColor = pageAccent.copy(alpha = 0.28f)
+                )
             )
 
             Row(

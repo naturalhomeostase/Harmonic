@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import com.harmonic.player.ui.theme.withSingleAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -128,6 +129,26 @@ private val playlistSortOptions = listOf(
 )
 
 /**
+ * Ajusta uma cor de tema pra ficar sempre legível como texto em gradiente,
+ * não importa o quão escura/dessaturada a cor original do tema seja.
+ * Antes, o gradiente do título reaproveitava as cores CRUAS do tema de
+ * fundo (as mesmas usadas no fundo, só escurecidas por um véu) — em temas
+ * mais escuros/mais sóbrios (ex: Mono, Floresta), texto e fundo ficavam
+ * parecidos demais e o título saía "opaco"/difícil de ler. Mantém o matiz
+ * (hue) de cada cor — pra ainda parecer "daquele tema" — só reforça
+ * saturação e luminosidade pra garantir contraste sobre o fundo escuro do
+ * app. Isso NÃO tem nenhuma relação com a extração de cor por música da
+ * tela "Tocando agora", que é um sistema totalmente separado.
+ */
+private fun readableGradientTextColor(color: Color): Color {
+    val hsl = FloatArray(3)
+    androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), hsl)
+    hsl[1] = hsl[1].coerceAtLeast(0.55f)
+    hsl[2] = hsl[2].coerceIn(0.58f, 0.82f)
+    return Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+}
+
+/**
  * Brush opcional pro título das músicas na lista, quando o usuário ativa
  * "gradiente nos títulos" na tela de Aparência. `null` = título com cor
  * sólida (comportamento padrão). Como [SongRow] é privado deste arquivo e
@@ -187,10 +208,10 @@ fun LibraryScreen(
     val titleBrush = if (titleGradientEnabled) {
         if (titleGradientColorStart != null && titleGradientColorEnd != null) {
             // Cores escolhidas livremente pelo usuário na roda de cores.
-            Brush.linearGradient(listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!)))
+            Brush.linearGradient(listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!)).map { readableGradientTextColor(it) })
         } else {
             val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.APP_ICON
-            Brush.linearGradient(theme.colorsArgb.map { Color(it) })
+            Brush.linearGradient(theme.colorsArgb.map { readableGradientTextColor(Color(it)) })
         }
     } else null
 
@@ -278,9 +299,19 @@ fun LibraryScreen(
         if (isSearching) searchFocusRequester.requestFocus()
     }
 
-    androidx.activity.compose.BackHandler(enabled = drilledGroup != null || drilledAlbumId != null) {
-        drilledGroup = null
-        drilledAlbumId = null
+    // Antes só tratava o gesto de voltar quando dentro de artista/álbum —
+    // com a busca aberta (e sem estar dentro de artista/álbum), o gesto de
+    // voltar não tinha NENHUM BackHandler ativo pra interceptar, então caía
+    // no comportamento padrão do sistema (minimizar o app) em vez de só
+    // fechar a busca.
+    androidx.activity.compose.BackHandler(enabled = isSearching || drilledGroup != null || drilledAlbumId != null) {
+        if (isSearching) {
+            isSearching = false
+            searchQuery = ""
+        } else {
+            drilledGroup = null
+            drilledAlbumId = null
+        }
     }
 
     val searchResults by (if (searchQuery.isNotBlank()) dao.search(searchQuery) else dao.getAllSongs())
