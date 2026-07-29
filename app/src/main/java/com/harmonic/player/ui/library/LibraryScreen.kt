@@ -129,22 +129,25 @@ private val playlistSortOptions = listOf(
 )
 
 /**
- * Ajusta uma cor de tema pra ficar sempre legível como texto em gradiente,
- * não importa o quão escura/dessaturada a cor original do tema seja.
- * Antes, o gradiente do título reaproveitava as cores CRUAS do tema de
- * fundo (as mesmas usadas no fundo, só escurecidas por um véu) — em temas
- * mais escuros/mais sóbrios (ex: Mono, Floresta), texto e fundo ficavam
- * parecidos demais e o título saía "opaco"/difícil de ler. Mantém o matiz
- * (hue) de cada cor — pra ainda parecer "daquele tema" — só reforça
- * saturação e luminosidade pra garantir contraste sobre o fundo escuro do
- * app. Isso NÃO tem nenhuma relação com a extração de cor por música da
- * tela "Tocando agora", que é um sistema totalmente separado.
+ * Reforça DE LEVE uma cor de tema pra ela ficar um pouco mais viva como
+ * texto em gradiente — sem se afastar muito da cor original da imagem/tema.
+ * Existia uma versão anterior aqui que forçava um PISO MÍNIMO de saturação
+ * (0.55) — em cores quase cinzas (saturação perto de zero, matiz instável
+ * numericamente), isso "inventava" uma cor praticamente aleatória em vez de
+ * reforçar a original (foi assim que uma imagem rosa-e-cinza virou um roxo
+ * forte no gradiente do título). Agora é só um MULTIPLICADOR suave sobre a
+ * saturação já existente — uma cor quase cinza continua quase cinza, só um
+ * pouco mais viva — e a luminosidade só é tocada nos extremos (escura
+ * demais pra ler, ou clara demais e "estourada"). Isso NÃO tem nenhuma
+ * relação com a extração de cor por música da tela "Tocando agora", que é
+ * um sistema totalmente separado.
  */
 private fun readableGradientTextColor(color: Color): Color {
     val hsl = FloatArray(3)
     androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), hsl)
-    hsl[1] = hsl[1].coerceAtLeast(0.55f)
-    hsl[2] = hsl[2].coerceIn(0.58f, 0.82f)
+    hsl[1] = (hsl[1] * 1.25f).coerceAtMost(1f)
+    if (hsl[2] < 0.3f) hsl[2] = 0.3f + hsl[2] * 0.3f
+    else if (hsl[2] > 0.88f) hsl[2] = 0.88f
     return Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
 }
 
