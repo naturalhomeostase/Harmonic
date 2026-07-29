@@ -67,17 +67,31 @@ fun EqualizerScreen(
     ) { padding ->
         if (!eqState.ready) {
             Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(
-                    if (eqState.attachFailed)
-                        "Não consegui conectar o equalizador ao áudio deste aparelho.\n" +
-                        "Tenta pausar e tocar a música de novo — se continuar assim, esse aparelho pode não suportar o equalizador do sistema."
-                    else
-                        "Toque em uma música pra ativar o equalizador.\n" +
-                        "Ele precisa de uma reprodução em andamento pra se conectar ao áudio.",
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(32.dp)
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (eqState.attachFailed)
+                            "Não consegui conectar o equalizador ao áudio deste aparelho.\n" +
+                            "Tenta pausar e tocar a música de novo — se continuar assim, esse aparelho pode não suportar o equalizador do sistema."
+                        else
+                            "Toque em uma música pra ativar o equalizador.\n" +
+                            "Ele precisa de uma reprodução em andamento pra se conectar ao áudio.",
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(32.dp)
+                    )
+                    if (eqState.attachFailed && eqState.attachErrorMessage != null) {
+                        // Mostra o erro de verdade direto na tela — sem
+                        // isso, só dava pra saber a causa real olhando o
+                        // logcat pelo computador.
+                        Text(
+                            eqState.attachErrorMessage!!,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(horizontal = 32.dp)
+                        )
+                    }
+                }
             }
             return@Scaffold
         }

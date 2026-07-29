@@ -13,6 +13,7 @@ data class EqualizerBandInfo(val index: Int, val centerFreqHz: Int, val minLevel
 data class EqualizerUiState(
     val ready: Boolean = false,
     val attachFailed: Boolean = false,
+    val attachErrorMessage: String? = null,
     val enabled: Boolean = false,
     val bands: List<EqualizerBandInfo> = emptyList(),
     val bandLevels: List<Int> = emptyList(),
@@ -85,7 +86,11 @@ class EqualizerController {
             // caso em vez de sempre "toque uma música".
             android.util.Log.e("EqualizerController", "Falha ao conectar efeitos de áudio (sessionId=$sessionId)", e)
             currentSessionId = 0
-            _uiState.value = _uiState.value.copy(ready = false, attachFailed = true)
+            _uiState.value = _uiState.value.copy(
+                ready = false,
+                attachFailed = true,
+                attachErrorMessage = "${e.javaClass.simpleName}: ${e.message}"
+            )
         }
     }
 
