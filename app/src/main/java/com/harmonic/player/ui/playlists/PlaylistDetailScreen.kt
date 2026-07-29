@@ -80,6 +80,12 @@ fun PlaylistDetailScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+    // Antes o Scaffold principal (com o nome da playlist no topo) ficava
+    // sempre composto, mesmo com a busca de "adicionar músicas" aberta por
+    // cima — como os dois têm fundo transparente (pra deixar o gradiente
+    // do tema aparecer), o nome da playlist "vazava" por trás do texto de
+    // busca, sobrepondo os dois. Agora só um dos dois é composto por vez.
+    if (!showAddSongsDialog) {
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -326,6 +332,7 @@ fun PlaylistDetailScreen(
                 }
             }
         }
+    }
     }
 
     if (showAddSongsDialog) {

@@ -169,7 +169,15 @@ fun EqualizerScreen(
             Spacer(Modifier.height(16.dp))
 
             Text("Bass Boost", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            if (!eqState.bassBoostAvailable) {
+                Text(
+                    "Não suportado neste aparelho.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
             Slider(
+                enabled = eqState.bassBoostAvailable,
                 value = eqState.bassBoostStrength.toFloat(),
                 onValueChange = { equalizerController.setBassBoostStrength(it.toInt()) },
                 onValueChangeFinished = { scope.launch { settings.setBassBoostStrength(eqState.bassBoostStrength) } },
@@ -179,7 +187,15 @@ fun EqualizerScreen(
             Spacer(Modifier.height(8.dp))
 
             Text("Virtualizador (efeito surround)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            if (!eqState.virtualizerAvailable) {
+                Text(
+                    "Não suportado neste aparelho.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
             Slider(
+                enabled = eqState.virtualizerAvailable,
                 value = eqState.virtualizerStrength.toFloat(),
                 onValueChange = { equalizerController.setVirtualizerStrength(it.toInt()) },
                 onValueChangeFinished = { scope.launch { settings.setVirtualizerStrength(eqState.virtualizerStrength) } },
@@ -189,10 +205,17 @@ fun EqualizerScreen(
             Spacer(Modifier.height(8.dp))
 
             Text("Reverb", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            if (!eqState.reverbAvailable) {
+                Text(
+                    "Não suportado neste aparelho.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
             Spacer(Modifier.height(4.dp))
             var reverbMenuExpanded by remember { mutableStateOf(false) }
             Box {
-                OutlinedButton(onClick = { reverbMenuExpanded = true }) {
+                OutlinedButton(onClick = { reverbMenuExpanded = true }, enabled = eqState.reverbAvailable) {
                     Text(reverbPresetNames.getOrElse(eqState.reverbPreset) { "Nenhum" })
                 }
                 com.harmonic.player.ui.common.ThemedDropdownMenu(expanded = reverbMenuExpanded, onDismissRequest = { reverbMenuExpanded = false }) {

@@ -19,7 +19,10 @@ data class EqualizerUiState(
     val bandLevels: List<Int> = emptyList(),
     val bassBoostStrength: Int = 0,
     val virtualizerStrength: Int = 0,
-    val reverbPreset: Int = 0
+    val reverbPreset: Int = 0,
+    val bassBoostAvailable: Boolean = true,
+    val virtualizerAvailable: Boolean = true,
+    val reverbAvailable: Boolean = true
 )
 
 /**
@@ -49,47 +52,85 @@ class EqualizerController {
         release()
         currentSessionId = sessionId
 
-        try {
-            val eq = Equalizer(0, sessionId).apply { enabled = _uiState.value.enabled }
-            val bands = (0 until eq.numberOfBands).map { i ->
+        // Antes, os 4 efeitos (Equalizer, BassBoost, Virtualizer,
+        // PresetReverb) eram criados dentro de UM ÚNICO try/catch — se
+        // qualquer um deles desse erro (ex: "AudioEffect: bad parameter
+        // value", muito comum especificamente no PresetReverb em várias
+        // ROMs de fabricante, mesmo quando o resto funciona sem problema),
+        // NENHUM efeito ficava disponível. Agora cada efeito tem seu
+        // próprio try/catch: se um falhar, os outros continuam
+        // funcionando normalmente, e só reportamos falha total se o
+        // Equalizer em si (o principal) não conseguir conectar.
+        var lastError: Exception? = null
+
+        val eq = try {
+            val e = Equalizer(0, sessionId).apply { enabled = _uiState.value.enabled }
+            val bands = (0 until e.numberOfBands).map { i ->
                 val idx = i.toShort()
                 EqualizerBandInfo(
                     index = i,
-                    centerFreqHz = eq.getCenterFreq(idx) / 1000,
-                    minLevel = eq.bandLevelRange[0].toInt(),
-                    maxLevel = eq.bandLevelRange[1].toInt()
+                    centerFreqHz = e.getCenterFreq(idx) / 1000,
+                    minLevel = e.bandLevelRange[0].toInt(),
+                    maxLevel = e.bandLevelRange[1].toInt()
                 )
             }
-            equalizer = eq
+            e to bands
+        } catch (e: Exception) {
+            android.util.Log.e("EqualizerController", "Falha ao conectar o Equalizer (sessionId=$sessionId)", e)
+            lastError = e
+            null
+        }
 
-            val bb = BassBoost(0, sessionId).apply { enabled = _uiState.value.enabled }
-            bassBoost = bb
+        val bb = try {
+            BassBoost(0, sessionId).apply { enabled = _uiState.value.enabled }
+        } catch (e: Exception) {
+            android.util.Log.e("EqualizerController", "Falha ao conectar o BassBoost (sessionId=$sessionId)", e)
+            if (eq == null) lastError = e
+            null
+        }
 
-            val vr = Virtualizer(0, sessionId).apply { enabled = _uiState.value.enabled }
-            virtualizer = vr
+        val vr = try {
+            Virtualizer(0, sessionId).apply { enabled = _uiState.value.enabled }
+        } catch (e: Exception) {
+            android.util.Log.e("EqualizerController", "Falha ao conectar o Virtualizer (sessionId=$sessionId)", e)
+            if (eq == null) lastError = e
+            null
+        }
 
-            val reverb = PresetReverb(0, sessionId).apply { enabled = false }
-            presetReverb = reverb
+        val reverb = try {
+            PresetReverb(0, sessionId).apply { enabled = false }
+        } catch (e: Exception) {
+            android.util.Log.e("EqualizerController", "Falha ao conectar o PresetReverb (sessionId=$sessionId)", e)
+            if (eq == null) lastError = e
+            null
+        }
 
-            _uiState.value = _uiState.value.copy(ready = true, attachFailed = false, bands = bands)
+        equalizer = eq?.first
+        bassBoost = bb
+        virtualizer = vr
+        presetReverb = reverb
 
+        if (eq != null) {
+            _uiState.value = _uiState.value.copy(
+                ready = true,
+                attachFailed = false,
+                attachErrorMessage = null,
+                bands = eq.second,
+                bassBoostAvailable = bb != null,
+                virtualizerAvailable = vr != null,
+                reverbAvailable = reverb != null
+            )
             // Reaplica os valores salvos assim que os efeitos são criados
             reapplyCurrentState()
-        } catch (e: Exception) {
-            // Alguns aparelhos (principalmente com ROMs customizadas) não
-            // implementam todos os efeitos — o app continua funcionando
-            // sem equalizador em vez de travar. Antes esse erro era
-            // engolido em silêncio (nem no logcat aparecia), o que tornava
-            // impossível saber SE estava mesmo falhando ou só ainda sem
-            // sessão de áudio válida — agora fica registrado, e a tela do
-            // equalizador consegue mostrar uma mensagem diferente pra cada
-            // caso em vez de sempre "toque uma música".
-            android.util.Log.e("EqualizerController", "Falha ao conectar efeitos de áudio (sessionId=$sessionId)", e)
+        } else {
+            // O Equalizer em si (o principal) não conseguiu conectar —
+            // mesmo que BassBoost/Virtualizer/Reverb tenham funcionado,
+            // sem bandas de frequência a tela não tem o que mostrar.
             currentSessionId = 0
             _uiState.value = _uiState.value.copy(
                 ready = false,
                 attachFailed = true,
-                attachErrorMessage = "${e.javaClass.simpleName}: ${e.message}"
+                attachErrorMessage = lastError?.let { "${it.javaClass.simpleName}: ${it.message}" }
             )
         }
     }

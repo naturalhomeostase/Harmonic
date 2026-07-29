@@ -717,34 +717,42 @@ private fun SleepTimerDialog(
     onCancel: () -> Unit
 ) {
     val options = listOf(5, 10, 15, 30, 45, 60)
+    // O CORPO do diálogo (fundo) usa a cor "de sistema" fixa do Material
+    // (colorScheme.surface), mas os botões de texto (TextButton) puxavam a
+    // cor de destaque POR MÚSICA (pageAccent, que sobrescreve
+    // colorScheme.primary só nesta tela) — as duas nem sempre combinam, e
+    // às vezes ficava ilegível. Fixando explicitamente em onSurface (a cor
+    // pensada pra sempre contrastar com esse fundo específico) em vez de
+    // herdar do botão, garante leitura em qualquer combinação de cores.
+    val onSurface = MaterialTheme.colorScheme.onSurface
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sleep timer") },
+        title = { Text("Sleep timer", color = onSurface) },
         text = {
             Column {
                 if (currentEndAt != null) {
                     Text(
                         "Timer ativo. Toque em \"Cancelar\" pra desativar.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = onSurface.copy(alpha = 0.85f)
                     )
                     Spacer(Modifier.height(12.dp))
                 }
                 options.forEach { minutes ->
                     TextButton(onClick = { onSelectMinutes(minutes) }, modifier = Modifier.fillMaxWidth()) {
-                        Text("$minutes minutos", modifier = Modifier.fillMaxWidth())
+                        Text("$minutes minutos", modifier = Modifier.fillMaxWidth(), color = onSurface)
                     }
                 }
                 TextButton(onClick = onSelectEndOfSong, modifier = Modifier.fillMaxWidth()) {
-                    Text("Fim da música atual", modifier = Modifier.fillMaxWidth())
+                    Text("Fim da música atual", modifier = Modifier.fillMaxWidth(), color = onSurface)
                 }
             }
         },
         confirmButton = {
             if (currentEndAt != null) {
-                TextButton(onClick = onCancel) { Text("Cancelar timer") }
+                TextButton(onClick = onCancel) { Text("Cancelar timer", color = onSurface) }
             } else {
-                TextButton(onClick = onDismiss) { Text("Fechar") }
+                TextButton(onClick = onDismiss) { Text("Fechar", color = onSurface) }
             }
         }
     )

@@ -3,6 +3,7 @@ package com.harmonic.player.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -65,7 +66,13 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+        val settingsScrollState = androidx.compose.foundation.rememberScrollState()
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(settingsScrollState)
+        ) {
             SettingsRow(
                 icon = Icons.Filled.Palette,
                 title = "Mudar tema",
@@ -186,6 +193,11 @@ fun SettingsScreen(
                     }
                 }
             )
+        }
+        com.harmonic.player.ui.common.FastScrollbarPlain(
+            scrollState = settingsScrollState,
+            modifier = Modifier.align(Alignment.CenterEnd)
+        )
         }
     }
 

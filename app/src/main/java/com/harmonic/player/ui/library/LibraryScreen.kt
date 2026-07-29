@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
@@ -2609,6 +2610,8 @@ private fun SongOptionsSheet(
         var genre by remember { mutableStateOf(song.genre ?: "") }
         var year by remember { mutableStateOf(song.year?.toString() ?: "") }
         var track by remember { mutableStateOf(song.trackNumber?.toString() ?: "") }
+        var lookingUpOnline by remember { mutableStateOf(false) }
+        var onlineLookupMessage by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(song.id) {
             val fileTags = com.harmonic.player.data.TagEditor.read(song.path)
@@ -2655,6 +2658,44 @@ private fun SongOptionsSheet(
                                 value = track, onValueChange = { track = it }, label = { Text("Faixa nº") }, singleLine = true,
                                 modifier = Modifier.weight(1f)
                             )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        // Busca álbum/ano/faixa/gênero automaticamente pelo
+                        // título+artista já preenchidos — só uma SUGESTÃO,
+                        // continua tudo editável antes de salvar.
+                        TextButton(
+                            enabled = !lookingUpOnline && title.isNotBlank(),
+                            onClick = {
+                                lookingUpOnline = true
+                                onlineLookupMessage = null
+                                scope.launch {
+                                    val info = com.harmonic.player.data.AlbumMetadataLookup.lookup(title, artist)
+                                    if (info == null) {
+                                        onlineLookupMessage = "Não achei essa música online."
+                                    } else {
+                                        if (!info.album.isNullOrBlank()) album = info.album
+                                        if (!info.year.isNullOrBlank()) year = info.year
+                                        if (!info.trackNumber.isNullOrBlank()) track = info.trackNumber
+                                        if (!info.genre.isNullOrBlank() && genre.isBlank()) genre = info.genre
+                                        onlineLookupMessage = "Preenchido com o que encontrei online — dá pra corrigir antes de salvar."
+                                    }
+                                    lookingUpOnline = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (lookingUpOnline) {
+                                androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Buscando...")
+                            } else {
+                                Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Buscar álbum/ano/faixa online")
+                            }
+                        }
+                        onlineLookupMessage?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
