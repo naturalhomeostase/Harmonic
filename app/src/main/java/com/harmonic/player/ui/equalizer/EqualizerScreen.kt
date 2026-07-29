@@ -56,9 +56,14 @@ fun EqualizerScreen(
         if (!eqState.ready) {
             Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
-                    "Toque em uma música pra ativar o equalizador.\n" +
-                    "Ele precisa de uma reprodução em andamento pra se conectar ao áudio.",
+                    if (eqState.attachFailed)
+                        "Não consegui conectar o equalizador ao áudio deste aparelho.\n" +
+                        "Tenta pausar e tocar a música de novo — se continuar assim, esse aparelho pode não suportar o equalizador do sistema."
+                    else
+                        "Toque em uma música pra ativar o equalizador.\n" +
+                        "Ele precisa de uma reprodução em andamento pra se conectar ao áudio.",
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(32.dp)
                 )
             }
@@ -126,7 +131,8 @@ fun EqualizerScreen(
                         }
                         Text(
                             if (band.centerFreqHz >= 1000) "${band.centerFreqHz / 1000}kHz" else "${band.centerFreqHz}Hz",
-                            style = MaterialTheme.typography.labelSmall
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                         )
                     }
                 }

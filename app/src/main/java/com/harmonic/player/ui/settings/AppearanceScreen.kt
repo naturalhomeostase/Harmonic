@@ -168,7 +168,16 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
             Slider(
                 value = blurRadius.toFloat(),
                 onValueChange = { scope.launch { settings.setBackgroundBlurRadius(it.toInt()) } },
-                valueRange = 0f..40f
+                valueRange = 0f..40f,
+                // Mesmo ajuste feito na barra de progresso da tela "Tocando
+                // agora": a trilha "restante" (mais fina) não tinha cor
+                // customizada e caía no cinza padrão do Material, destoando
+                // da cor de destaque do tema. Agora usa a mesma cor, só
+                // mais discreta.
+                colors = SliderDefaults.colors(
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                )
             )
 
             Spacer(Modifier.height(16.dp))
@@ -182,7 +191,11 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
             Slider(
                 value = scrimAlpha.toFloat(),
                 onValueChange = { scope.launch { settings.setBackgroundScrimAlpha(it.toInt()) } },
-                valueRange = 0f..90f
+                valueRange = 0f..90f,
+                colors = SliderDefaults.colors(
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                )
             )
 
             Spacer(Modifier.height(24.dp))
@@ -265,14 +278,14 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                                     // cor preferida continua disponível acima,
                                     // bastando tocar nela depois pra sobrescrever.
                                     // Exceção: o tema padrão "Music Box" já TEM
-                                    // uma cor de destaque própria (o rosa do
+                                    // uma cor de destaque própria (o dourado do
                                     // ícone, definida em HarmonicTheme) — usar
-                                    // setAccentColor aqui prendia permanentemente
-                                    // a cor mais saturada do gradiente (o azul),
-                                    // deixando o "tema padrão" azul depois de
+                                    // setAccentColor aqui prenderia permanentemente
+                                    // a cor mais saturada do gradiente, deixando o
+                                    // "tema padrão" com uma cor errada depois de
                                     // trocar pra outro tema e voltar. Limpando a
                                     // cor customizada em vez de fixar uma nova,
-                                    // ele volta a usar o rosa de verdade.
+                                    // ele volta a usar o dourado de verdade.
                                     if (theme == com.harmonic.player.data.GradientTheme.APP_ICON) {
                                         settings.clearAccentColor()
                                     } else {

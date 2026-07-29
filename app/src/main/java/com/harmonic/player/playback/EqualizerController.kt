@@ -12,6 +12,7 @@ data class EqualizerBandInfo(val index: Int, val centerFreqHz: Int, val minLevel
 
 data class EqualizerUiState(
     val ready: Boolean = false,
+    val attachFailed: Boolean = false,
     val enabled: Boolean = false,
     val bands: List<EqualizerBandInfo> = emptyList(),
     val bandLevels: List<Int> = emptyList(),
@@ -69,15 +70,22 @@ class EqualizerController {
             val reverb = PresetReverb(0, sessionId).apply { enabled = false }
             presetReverb = reverb
 
-            _uiState.value = _uiState.value.copy(ready = true, bands = bands)
+            _uiState.value = _uiState.value.copy(ready = true, attachFailed = false, bands = bands)
 
             // Reaplica os valores salvos assim que os efeitos são criados
             reapplyCurrentState()
         } catch (e: Exception) {
             // Alguns aparelhos (principalmente com ROMs customizadas) não
             // implementam todos os efeitos — o app continua funcionando
-            // sem equalizador em vez de travar.
-            _uiState.value = _uiState.value.copy(ready = false)
+            // sem equalizador em vez de travar. Antes esse erro era
+            // engolido em silêncio (nem no logcat aparecia), o que tornava
+            // impossível saber SE estava mesmo falhando ou só ainda sem
+            // sessão de áudio válida — agora fica registrado, e a tela do
+            // equalizador consegue mostrar uma mensagem diferente pra cada
+            // caso em vez de sempre "toque uma música".
+            android.util.Log.e("EqualizerController", "Falha ao conectar efeitos de áudio (sessionId=$sessionId)", e)
+            currentSessionId = 0
+            _uiState.value = _uiState.value.copy(ready = false, attachFailed = true)
         }
     }
 

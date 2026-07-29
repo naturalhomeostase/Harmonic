@@ -292,9 +292,17 @@ private fun HarmonicNavHost(
 
     // Reconecta os efeitos sempre que o audioSessionId do ExoPlayer mudar
     // (acontece ao iniciar a reprodução pela primeira vez, por exemplo).
+    // Se a primeira tentativa falhar (alguns aparelhos ainda não têm a
+    // trilha de áudio 100% pronta no instante exato em que o ID da sessão
+    // muda), tenta de novo uma vez depois de um instante, em vez de
+    // desistir na hora.
     LaunchedEffect(audioSessionId) {
         if (audioSessionId != 0) {
             equalizerController.attach(audioSessionId)
+            if (equalizerController.uiState.value.attachFailed) {
+                kotlinx.coroutines.delay(600)
+                equalizerController.attach(audioSessionId)
+            }
         }
     }
 
@@ -331,6 +339,7 @@ private fun HarmonicNavHost(
                 musicRepository = app.musicRepository,
                 onBack = { navController.popBackStack() },
                 onOpenTheme = { navController.navigate("appearance") },
+                onOpenEqualizer = { navController.navigate("equalizer") },
                 onOpenHiddenFolders = { navController.navigate("hidden_folders") },
                 onOpenHiddenSongs = { navController.navigate("hidden_songs") }
             )

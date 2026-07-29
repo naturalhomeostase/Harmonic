@@ -33,10 +33,13 @@ enum class DefaultWallpaper(val assetPath: String, val label: String) {
  * não precisar depender do Compose.
  */
 enum class GradientTheme(val label: String, val colorsArgb: List<Long>) {
-    // Tema padrão, com as cores do ícone atual do app (preto -> rosa).
-    // Só essas 2 paradas (nada de azul aqui) — é o que fazia a cor de
-    // destaque "vazar" pra azul ao escolher esse tema (ver clearAccentColor).
-    APP_ICON("Music Box", listOf(0xFF000000, 0xFFE76895)),
+    // Tema padrão — cores tiradas do ícone atual do app (o gramofone
+    // dourado): um âmbar/bronze mais rico numa ponta e um creme dourado
+    // quente na outra, ecoando o metal e a caixinha de música do ícone,
+    // só um pouco mais vivos/saturados do que uma amostra literal da
+    // imagem ficaria (uma cor "crua" tirada do ícone tende a sair meio
+    // sem graça/acinzentada como fundo de tela inteira).
+    APP_ICON("Music Box", listOf(0xFFB6812B, 0xFFFFE9C4)),
     // Tirei os temas azuis, o rosa (Rosé) e o roxo (Neon) — eram
     // exatamente os que ficavam com a cor de destaque opaca/estranha.
     SUNSET("Pôr do sol", listOf(0xFFFFD200, 0xFFDD2476)),

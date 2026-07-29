@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -39,6 +40,7 @@ fun SettingsScreen(
     musicRepository: MusicRepository,
     onBack: () -> Unit,
     onOpenTheme: () -> Unit,
+    onOpenEqualizer: () -> Unit,
     onOpenHiddenFolders: () -> Unit,
     onOpenHiddenSongs: () -> Unit
 ) {
@@ -69,6 +71,13 @@ fun SettingsScreen(
                 title = "Mudar tema",
                 subtitle = "Gradientes, imagem de fundo, cor de destaque e gradiente dos títulos",
                 onClick = onOpenTheme
+            )
+
+            SettingsRow(
+                icon = Icons.Filled.GraphicEq,
+                title = "Equalizador",
+                subtitle = "Presets, bandas de frequência, bass boost, virtualizador e reverb",
+                onClick = onOpenEqualizer
             )
 
             SettingsRow(
