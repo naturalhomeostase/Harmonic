@@ -71,9 +71,24 @@ class PlaybackService : MediaSessionService() {
         PlaybackServiceHolder.attach(player)
 
         player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) = updateWidget()
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                updateWidget()
+                // Reforça o valor atual da sessão de áudio a cada troca de
+                // play/pause — o listener de análise abaixo (que só reage
+                // quando o ID realmente MUDA) sozinho não estava sendo o
+                // bastante pra manter o equalizador conectado em todos os
+                // casos reais de uso; isso é uma rede de segurança extra,
+                // barata de chamar.
+                PlaybackAudioSession.update(player.audioSessionId)
+            }
             override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = updateWidget()
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = updateWidget()
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                updateWidget()
+                PlaybackAudioSession.update(player.audioSessionId)
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                PlaybackAudioSession.update(player.audioSessionId)
+            }
         })
 
         // O audioSessionId só é acessível aqui, na instância real do

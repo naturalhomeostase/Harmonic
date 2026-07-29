@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 private val Context.dataStore by preferencesDataStore(name = "harmonic_settings")
@@ -73,6 +74,24 @@ class SettingsRepository(private val context: Context) {
         started = SharingStarted.Eagerly,
         initialValue = runBlocking { context.dataStore.data.first() }
     )
+
+    init {
+        // Migração única: quem já tinha o app instalado (com o ícone/tema
+        // antigo) e nunca escolheu uma cor de destaque própria acabava com
+        // essa cor salva no disco mesmo assim — ela era o FALLBACK antigo
+        // (rosa/salmão do ícone anterior), aplicado sempre que o tema
+        // "Music Box" era selecionado. Trocar só o valor padrão no código
+        // não muda o que já está gravado no aparelho de quem atualiza por
+        // cima; sem isso, o app continuava salmão mesmo com ícone e tema já
+        // dourados. Só limpa se o valor salvo bater EXATAMENTE com o tom
+        // antigo (não mexe em nenhuma cor escolhida deliberadamente pelo
+        // usuário na roda de cores).
+        val oldDefaultPinks = setOf(0xFFE76895L.toInt(), 0xFFC23E74L.toInt())
+        val savedAccent = data.value[Keys.ACCENT_COLOR]
+        if (savedAccent != null && oldDefaultPinks.contains(savedAccent)) {
+            repoScope.launch { context.dataStore.edit { it.remove(Keys.ACCENT_COLOR) } }
+        }
+    }
 
     private object Keys {
         val ACCENT_COLOR = intPreferencesKey("accent_color")

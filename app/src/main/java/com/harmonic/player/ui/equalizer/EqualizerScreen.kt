@@ -29,6 +29,18 @@ fun EqualizerScreen(
     val scope = rememberCoroutineScope()
     val eqState by equalizerController.uiState.collectAsState()
 
+    // Rede de segurança extra: sempre que essa tela abre, tenta conectar de
+    // novo com o ID de sessão mais recente conhecido — em vez de confiar
+    // 100% no listener reativo lá em cima (que só reage quando o ID MUDA e,
+    // na prática, pode perder alguma transição). Isso é barato: se já
+    // estiver conectado com o mesmo ID, `attach()` não faz nada.
+    LaunchedEffect(Unit) {
+        val currentSessionId = com.harmonic.player.playback.PlaybackAudioSession.sessionId.value
+        if (currentSessionId != 0 && !eqState.ready) {
+            equalizerController.attach(currentSessionId)
+        }
+    }
+
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {

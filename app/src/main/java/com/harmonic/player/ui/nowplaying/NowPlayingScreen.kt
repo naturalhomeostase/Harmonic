@@ -307,7 +307,18 @@ fun NowPlayingScreen(
 
             Text(
                 state.currentSong?.title ?: "Nada tocando",
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    // Mesmo truque da letra da música (LyricsView): em vez
+                    // de tentar adivinhar/trocar a cor quando ela fica
+                    // parecida com o fundo, uma sombra escura difusa por
+                    // trás cria contraste em qualquer combinação de cores,
+                    // sem precisar mudar a cor do tema.
+                    shadow = androidx.compose.ui.graphics.Shadow(
+                        color = Color.Black.copy(alpha = 0.75f),
+                        offset = androidx.compose.ui.geometry.Offset(0f, 1f),
+                        blurRadius = 10f
+                    )
+                ),
                 color = pageAccent
             )
             Text(
