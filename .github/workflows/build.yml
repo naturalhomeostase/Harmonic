@@ -1,42 +1,52 @@
 name: Build APK
-
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Configurar JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-
       # Como não versionamos o gradle-wrapper.jar (arquivo binário), geramos
       # o wrapper aqui usando o Gradle da action antes de compilar.
       - name: Instalar Gradle e gerar wrapper
         uses: gradle/actions/setup-gradle@v3
-
       - name: Gerar gradle wrapper
         run: gradle wrapper --gradle-version 8.7
-
       - name: Dar permissão ao gradlew
         run: chmod +x gradlew
-
       - name: Compilar APK debug
         run: ./gradlew assembleDebug --stacktrace
-
       - name: Enviar APK como artefato
         uses: actions/upload-artifact@v4
         with:
           name: harmonic-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+      # NOVO — compila também a versão release em .apk e .aab (o .aab é o
+      # formato que a Play Store pede pra publicação; o .apk continua saindo
+      # normal, pra instalação direta/teste). Usa a keystore de release fixa
+      # já commitada em /keystore, então sai assinado sem precisar de nenhum
+      # secret extra no repositório.
+      - name: Compilar APK release
+        run: ./gradlew assembleRelease --stacktrace
+      - name: Compilar AAB release
+        run: ./gradlew bundleRelease --stacktrace
+      - name: Enviar APK release como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: harmonic-release-apk
+          path: app/build/outputs/apk/release/*.apk
+      - name: Enviar AAB release como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: harmonic-release-aab
+          path: app/build/outputs/bundle/release/*.aab
