@@ -91,6 +91,37 @@ class SettingsRepository(private val context: Context) {
         if (savedAccent != null && oldDefaultPinks.contains(savedAccent)) {
             repoScope.launch { context.dataStore.edit { it.remove(Keys.ACCENT_COLOR) } }
         }
+
+        // Segunda migração: quem tinha escolhido um dos gradientes removidos
+        // (o rosa "Rosé", o roxo "Neon" ou um dos azuis) ficou com o NOME
+        // desse tema salvo no disco (ex: "ROSE"), que não bate com nenhum
+        // valor do enum GradientTheme atual — todo lugar que resolve esse
+        // nome já cai de volta no gradiente padrão (APP_ICON) com
+        // `.find { ... } ?: GradientTheme.APP_ICON`, então o FUNDO parece
+        // certo. O problema é que a cor de destaque (accent_color) e as
+        // cores do gradiente de título, que tinham sido salvas junto quando
+        // aquele tema antigo foi escolhido (a partir do rosa/roxo/azul dele),
+        // continuavam presas no disco pra sempre — nada as limpava nesse
+        // caminho de fallback silencioso. Resultado: o app mostrava o
+        // gradiente novo (dourado) mas "Music Box", sublinhados, ícones etc
+        // continuavam com a cor do tema antigo removido. Detectando esse
+        // nome órfão aqui, aplicamos a MESMA limpeza que a tela de aparência
+        // já faz ao selecionar "Music Box" manualmente: cor de destaque e
+        // gradiente de título voltam a acompanhar o tema padrão.
+        val savedGradientName = data.value[Keys.GRADIENT_THEME]
+        val gradientIsOrphaned = savedGradientName != null &&
+            GradientTheme.values().none { it.name == savedGradientName }
+        if (gradientIsOrphaned) {
+            repoScope.launch {
+                context.dataStore.edit {
+                    it.remove(Keys.GRADIENT_THEME)
+                    it.remove(Keys.ACCENT_COLOR)
+                    it[Keys.USE_ALBUM_ART_COLOR] = false
+                    it.remove(Keys.TITLE_GRADIENT_COLOR_START)
+                    it.remove(Keys.TITLE_GRADIENT_COLOR_END)
+                }
+            }
+        }
     }
 
     private object Keys {

@@ -152,10 +152,36 @@ class EqualizerController {
     }
 
     fun setBandLevel(bandIndex: Int, level: Int) {
-        equalizer?.setBandLevel(bandIndex.toShort(), level.toShort())
+        // O crash "AudioEffect: bad parameter value" acontecia aqui: o
+        // range de milibels válido (min/max) do Equalizer MUDA de aparelho
+        // pra aparelho (cada ROM/fabricante define o próprio DSP), então um
+        // nível salvo no DataStore num aparelho com range maior (ex:
+        // -1500..1500) é um valor "fora da faixa" num aparelho com range
+        // menor (ex: -1200..1200) — e o Equalizer.setBandLevel do Android
+        // lança IllegalArgumentException nesse caso em vez de simplesmente
+        // ignorar/clampar. Isso disparava sempre que `reapplyCurrentState()`
+        // tentava reaplicar um valor salvo assim que o Equalizer conectava
+        // (attach -> reapplyCurrentState -> setBandLevel), derrubando o app
+        // inteiro porque a exceção não era tratada. Agora limitamos o nível
+        // ao range real da banda (reportado pelo próprio aparelho em
+        // `attach()`) antes de chamar a API nativa, e ainda blindamos a
+        // chamada com try/catch por segurança — assim, mesmo num aparelho
+        // com alguma peculiaridade a mais, o equalizador nunca mais derruba
+        // o app; na pior das hipóteses aquela banda específica só não muda.
+        val bandInfo = _uiState.value.bands.getOrNull(bandIndex)
+        val clampedLevel = if (bandInfo != null) {
+            level.coerceIn(bandInfo.minLevel, bandInfo.maxLevel)
+        } else {
+            level
+        }
+        try {
+            equalizer?.setBandLevel(bandIndex.toShort(), clampedLevel.toShort())
+        } catch (e: Exception) {
+            android.util.Log.e("EqualizerController", "Falha ao aplicar o nível da banda $bandIndex (level=$clampedLevel)", e)
+        }
         val updated = _uiState.value.bandLevels.toMutableList()
         while (updated.size <= bandIndex) updated.add(0)
-        updated[bandIndex] = level
+        updated[bandIndex] = clampedLevel
         _uiState.value = _uiState.value.copy(bandLevels = updated)
     }
 
