@@ -130,36 +130,31 @@ private val playlistSortOptions = listOf(
 )
 
 /**
- * Deriva a cor do TEXTO a partir da cor do FUNDO naquele ponto (do tema, da
- * imagem, ou da bolinha que o usuário escolheu), mantendo o mesmo matiz —
- * pra sempre combinar com o fundo — mas SEM ficar parecida demais com ele.
+ * Deriva a cor do TEXTO a partir da cor do FUNDO do tema/imagem (mantém o
+ * matiz, pra combinar) — mas decide se o texto fica claro ou escuro
+ * baseado em cima de que SUPERFÍCIE ele realmente é desenhado
+ * ([surfaceIsDark]), não na luminosidade da própria cor de origem.
  *
- * Existia uma versão anterior aqui que só evitava os EXTREMOS de
- * luminosidade (nem escura, nem clara demais), mas deixava a luminosidade
- * do texto praticamente igual à do fundo — e como as duas vêm da MESMA cor,
- * o texto quase sempre saía parecido demais com o próprio fundo em cima do
- * qual ele é desenhado (baixo contraste, "apagado", mesmo passando pelo
- * ajuste). Agora a luminosidade do texto vai pro EXTREMO OPOSTO ao do
- * fundo: fundo escuro -> texto vira uma versão bem clara e viva do mesmo
- * tom; fundo claro -> texto vira uma versão bem escura e saturada. Sempre
- * garante um salto grande de contraste, sem trocar o matiz (por isso ainda
- * combina) e sem inventar uma cor aleatória.
+ * Essa distinção é o que quebrou na primeira tentativa: eu jogava a
+ * luminosidade do texto pro extremo OPOSTO ao da cor de origem (fundo do
+ * tema escuro -> texto claro; fundo do tema claro -> texto escuro). Parece
+ * lógico, mas as linhas da lista de músicas são desenhadas em cima da
+ * SUPERFÍCIE do app (escura, no tema escuro/AMOLED), não literalmente em
+ * cima daquele pixel específico do gradiente decorativo lá no topo da tela.
+ * Então sempre que a cor de origem era clara (ex: o dourado vivo do tema
+ * padrão), o texto virava escuro — e escuro em cima da superfície ESCURA
+ * do app é quase invisível. Daí ter piorado.
  *
- * Existia também uma versão ainda mais antiga que forçava um PISO MÍNIMO de
- * saturação (0.55) — em cores quase cinzas (saturação perto de zero, matiz
- * instável numericamente), isso "inventava" uma cor praticamente aleatória
- * em vez de reforçar a original (foi assim que uma imagem rosa-e-cinza
- * virou um roxo forte no gradiente do título). Por isso aqui a saturação
- * continua sendo só um MULTIPLICADOR suave sobre a que já existia — uma cor
- * quase cinza continua quase cinza (só um pouco mais viva), nunca ganha um
- * matiz novo do nada. Isso NÃO tem nenhuma relação com a extração de cor
- * por música da tela "Tocando agora", que é um sistema totalmente separado.
+ * Agora a claridade do texto acompanha a superfície real (clara no tema
+ * escuro, escura no tema claro) — sempre a mesma decisão pras duas pontas
+ * do gradiente — e só o matiz/saturação varia entre elas. Ainda é um
+ * gradiente (cores diferentes), só que sempre do lado legível.
  */
-private fun readableGradientTextColor(background: Color): Color {
+private fun readableGradientTextColor(background: Color, surfaceIsDark: Boolean): Color {
     val hsl = FloatArray(3)
     androidx.core.graphics.ColorUtils.colorToHSL(background.toArgb(), hsl)
     hsl[1] = (hsl[1] * 1.3f).coerceAtMost(1f)
-    hsl[2] = if (hsl[2] > 0.5f) 0.18f else 0.90f
+    hsl[2] = if (surfaceIsDark) 0.82f else 0.22f
     return Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
 }
 
@@ -221,12 +216,16 @@ fun LibraryScreen(
         LibraryTab.values().filter { it == LibraryTab.SONGS || it.name !in hiddenTabNames }
     }
     val titleBrush = if (titleGradientEnabled) {
+        // A luminosidade do texto acompanha a superfície REAL onde ele é
+        // desenhado (clara/escura do tema atual), não a cor de origem do
+        // gradiente — ver o comentário em cima de readableGradientTextColor.
+        val surfaceIsDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
         if (titleGradientColorStart != null && titleGradientColorEnd != null) {
             // Cores escolhidas livremente pelo usuário na roda de cores.
-            Brush.linearGradient(listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!)).map { readableGradientTextColor(it) })
+            Brush.linearGradient(listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!)).map { readableGradientTextColor(it, surfaceIsDark) })
         } else {
             val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.APP_ICON
-            Brush.linearGradient(theme.colorsArgb.map { readableGradientTextColor(Color(it)) })
+            Brush.linearGradient(theme.colorsArgb.map { readableGradientTextColor(Color(it), surfaceIsDark) })
         }
     } else null
 
