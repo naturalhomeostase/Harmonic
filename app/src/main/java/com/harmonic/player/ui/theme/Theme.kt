@@ -1,12 +1,10 @@
 package com.harmonic.player.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
 
 private val fallbackDarkColors = darkColorScheme(
     primary = Color(0xFFD9A94F),      // dourado do ícone do app (tema padrão "Music Box")
@@ -56,9 +54,8 @@ fun ColorScheme.withSingleAccent(accent: Color): ColorScheme = copy(
  *    esquema claro/escuro base (funciona em qualquer versão do Android).
  * 2. Senão, se houver uma cor extraída da capa do álbum -> usa ela do
  *    mesmo jeito.
- * 3. Senão, no Android 12+, usa Material You dinâmico (cor do papel de
- *    parede do SISTEMA — diferente do papel de parede do app).
- * 4. Por fim, cai no fallback fixo definido acima.
+ * 3. Por fim, cai no fallback fixo definido acima (o dourado/bronze do
+ *    tema padrão "Music Box").
  */
 @Composable
 fun HarmonicTheme(
@@ -67,7 +64,6 @@ fun HarmonicTheme(
     albumArtSeedColor: Color? = null,
     content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
     val systemDark = isSystemInDarkTheme()
     val useDark = when (themeMode) {
         ThemeMode.LIGHT -> false
@@ -75,20 +71,34 @@ fun HarmonicTheme(
         ThemeMode.SYSTEM -> systemDark
     }
 
-    val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val fallbackScheme = if (useDark) fallbackDarkColors else fallbackLightColors
 
+    /*
+     * ESSA era a causa raiz da cor rosê que insistia em voltar mesmo depois
+     * de limpar a cor de destaque e reinstalar o app: em qualquer aparelho
+     * Android 12+ (a maioria hoje em dia), sempre que NENHUMA cor de
+     * destaque manual estava escolhida — que é exatamente a situação do
+     * tema padrão "Music Box" — o app caía nesse branch de Material You
+     * dinâmico, que pega a cor automaticamente do PAPEL DE PAREDE DO
+     * SISTEMA (não tem nada a ver com o tema escolhido dentro do app). Se
+     * o papel de parede do celular tem tons rosados, o Android calcula uma
+     * paleta rosada e ela virava a cor de destaque do app inteiro — nome
+     * "Music Box", sublinhados, ícones — por baixo do fallback dourado
+     * fixo, que na prática nunca era alcançado nesses aparelhos. Isso
+     * explica por que nada dentro do app (trocar tema, reinstalar) resolvia:
+     * a fonte da cor estava fora do app.
+     *
+     * O app não tem nenhuma opção de "cor automática do sistema" nas
+     * configurações de Aparência — os únicos temas disponíveis usam cores
+     * fixas definidas no próprio app — então esse comportamento automático
+     * nunca era, de fato, uma escolha do usuário. Removido: agora, sem uma
+     * cor manual (ou extraída da capa do álbum), o app sempre usa o
+     * dourado/bronze fixo do ícone, como o tema padrão "Music Box" sempre
+     * prometeu.
+     */
     val baseScheme = when {
         customAccentColor != null -> fallbackScheme.withSingleAccent(customAccentColor)
         albumArtSeedColor != null -> fallbackScheme.withSingleAccent(albumArtSeedColor)
-        dynamicSupported -> {
-            val dynamic = if (useDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            // O Material You dinâmico já é harmonioso por si só (vem do
-            // papel de parede do sistema), mas ainda assim unificamos
-            // secondary/tertiary com o primary pra manter a promessa de
-            // "só uma cor de destaque" em todo o app, sem surpresas.
-            dynamic.withSingleAccent(dynamic.primary)
-        }
         else -> fallbackScheme
     }
 

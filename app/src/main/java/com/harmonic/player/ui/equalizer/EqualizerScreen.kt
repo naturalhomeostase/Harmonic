@@ -144,12 +144,20 @@ fun EqualizerScreen(
         ) {
             Text("Presets", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
+            // Nenhum chip de preset nunca aparecia marcado, mesmo quando os
+            // níveis atuais batiam exatamente com um preset (ex: acabou de
+            // tocar nele). Comparando os níveis atuais com o que cada
+            // preset geraria, dá pra saber e destacar qual está ativo.
+            val activePreset = equalizerPresets.firstOrNull {
+                it.toBandLevels(eqState.bands) == eqState.bandLevels
+            }
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(equalizerPresets) { preset ->
+                    val isSelected = preset == activePreset
                     FilterChip(
-                        selected = false,
+                        selected = isSelected,
                         onClick = {
                             val newLevels = preset.toBandLevels(eqState.bands)
                             newLevels.forEachIndexed { index, level ->
@@ -164,7 +172,10 @@ fun EqualizerScreen(
                         label = { Text(preset.name) },
                         colors = FilterChipDefaults.filterChipColors(
                             labelColor = MaterialTheme.colorScheme.primary,
-                            iconColor = MaterialTheme.colorScheme.primary
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
                         ),
                         // A borda padrão do FilterChip é um cinza fixo do
                         // Material, que em temas mais escuros/saturados
@@ -174,8 +185,9 @@ fun EqualizerScreen(
                         // tema escolhido.
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
-                            selected = false,
+                            selected = isSelected,
                             borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                            selectedBorderColor = MaterialTheme.colorScheme.primary,
                             borderWidth = 1.dp
                         )
                     )
@@ -213,8 +225,16 @@ fun EqualizerScreen(
                                     activeTrackColor = MaterialTheme.colorScheme.primary,
                                     inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
                                 ),
+                                // O Box em volta só tem 48dp de largura — menos que os
+                                // 160dp pedidos aqui — então o `.width(160.dp)` comum
+                                // era espremido pra caber nesses 48dp ANTES de girar,
+                                // e só depois disso o `.rotate(-90f)` agia. Resultado:
+                                // um slider giradinho só que pequeno (era isso que
+                                // aparecia pequeno no print). `requiredWidth` ignora
+                                // essa restrição do pai e garante os 160dp de verdade
+                                // antes de girar, preenchendo a altura toda da caixinha.
                                 modifier = Modifier
-                                    .width(160.dp)
+                                    .requiredWidth(160.dp)
                                     .rotate(-90f)
                             )
                         }
@@ -228,7 +248,11 @@ fun EqualizerScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            HorizontalDivider()
+            // O HorizontalDivider() sem cor cai no outlineVariant padrão do
+            // Material, que é praticamente preto — destoava de qualquer
+            // tema. Usando a cor de destaque bem discreta (12% de opacidade,
+            // igual já fazemos nos separadores do menu de Reverb).
+            HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
             Spacer(Modifier.height(16.dp))
 
             Text("Bass Boost", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
@@ -286,7 +310,17 @@ fun EqualizerScreen(
             Spacer(Modifier.height(4.dp))
             var reverbMenuExpanded by remember { mutableStateOf(false) }
             Box {
-                OutlinedButton(onClick = { reverbMenuExpanded = true }, enabled = eqState.reverbAvailable) {
+                OutlinedButton(
+                    onClick = { reverbMenuExpanded = true },
+                    enabled = eqState.reverbAvailable,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                    )
+                ) {
                     Text(reverbPresetNames.getOrElse(eqState.reverbPreset) { "Nenhum" })
                 }
                 com.harmonic.player.ui.common.ThemedDropdownMenu(expanded = reverbMenuExpanded, onDismissRequest = { reverbMenuExpanded = false }) {
