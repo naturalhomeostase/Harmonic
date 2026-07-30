@@ -130,32 +130,49 @@ private val playlistSortOptions = listOf(
 )
 
 /**
- * Deriva a cor do TEXTO a partir da cor do FUNDO do tema/imagem (mantém o
- * matiz, pra combinar) — mas decide se o texto fica claro ou escuro
- * baseado em cima de que SUPERFÍCIE ele realmente é desenhado
- * ([surfaceIsDark]), não na luminosidade da própria cor de origem.
+ * Deriva as cores de TEXTO a partir das duas cores do FUNDO do tema/imagem
+ * (mantém o matiz de cada uma, pra combinar) — mas a claridade de cada uma
+ * fica dentro de uma FAIXA legível pra a superfície onde o texto realmente
+ * é desenhado ([surfaceIsDark]), não solta que nem na cor de origem.
  *
- * Essa distinção é o que quebrou na primeira tentativa: eu jogava a
- * luminosidade do texto pro extremo OPOSTO ao da cor de origem (fundo do
- * tema escuro -> texto claro; fundo do tema claro -> texto escuro). Parece
- * lógico, mas as linhas da lista de músicas são desenhadas em cima da
- * SUPERFÍCIE do app (escura, no tema escuro/AMOLED), não literalmente em
- * cima daquele pixel específico do gradiente decorativo lá no topo da tela.
- * Então sempre que a cor de origem era clara (ex: o dourado vivo do tema
- * padrão), o texto virava escuro — e escuro em cima da superfície ESCURA
- * do app é quase invisível. Daí ter piorado.
+ * Primeira versão jogava a claridade pro extremo OPOSTO ao da cor de
+ * origem — só que o texto é desenhado em cima da SUPERFÍCIE do app
+ * (escura, no tema escuro/AMOLED), não literalmente em cima daquele pixel
+ * do gradiente decorativo lá no topo da tela. Cor de origem clara virava
+ * texto escuro, que é quase invisível numa superfície já escura.
  *
- * Agora a claridade do texto acompanha a superfície real (clara no tema
- * escuro, escura no tema claro) — sempre a mesma decisão pras duas pontas
- * do gradiente — e só o matiz/saturação varia entre elas. Ainda é um
- * gradiente (cores diferentes), só que sempre do lado legível.
+ * Segunda versão corrigiu isso jogando as DUAS pontas pra uma claridade
+ * FIXA idêntica — sempre legível, mas quando as duas cores de origem já
+ * eram parecidas em tom (ex: os dois azuis do tema "Oceano"), o resultado
+ * virava praticamente uma cor só, sem graça de gradiente nenhuma.
+ *
+ * Agora as duas pontas ficam dentro de uma FAIXA (não um valor fixo) —
+ * a que era mais clara na cor original continua um pouco mais clara que a
+ * outra dentro dessa faixa, e vice-versa. Sempre dentro da zona legível
+ * (nunca escura o suficiente pra sumir no fundo escuro, nem clara o
+ * suficiente pra sumir no fundo claro), mas com uma diferença de claridade
+ * real entre as duas pontas — dá pra ver que é um gradiente de verdade, não
+ * só duas variações quase iguais do mesmo tom.
  */
-private fun readableGradientTextColor(background: Color, surfaceIsDark: Boolean): Color {
-    val hsl = FloatArray(3)
-    androidx.core.graphics.ColorUtils.colorToHSL(background.toArgb(), hsl)
-    hsl[1] = (hsl[1] * 1.3f).coerceAtMost(1f)
-    hsl[2] = if (surfaceIsDark) 0.82f else 0.22f
-    return Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+private fun readableGradientTextColors(sourceColors: List<Color>, surfaceIsDark: Boolean): List<Color> {
+    val bandLow = if (surfaceIsDark) 0.66f else 0.14f
+    val bandHigh = if (surfaceIsDark) 0.92f else 0.34f
+
+    val hsls = sourceColors.map { color ->
+        FloatArray(3).also { androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), it) }
+    }
+    // Ordena os índices da cor mais escura pra mais clara NA ORIGEM, pra
+    // decidir quem fica perto do bandLow e quem fica perto do bandHigh —
+    // preserva qual das duas "puxava mais pro claro" no tema original.
+    val order = hsls.indices.sortedBy { hsls[it][2] }
+    val step = if (order.size > 1) (bandHigh - bandLow) / (order.size - 1) else 0f
+
+    return hsls.mapIndexed { index, hsl ->
+        val rank = order.indexOf(index)
+        hsl[1] = (hsl[1] * 1.3f).coerceAtMost(1f)
+        hsl[2] = bandLow + step * rank
+        Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+    }
 }
 
 /**
@@ -216,16 +233,18 @@ fun LibraryScreen(
         LibraryTab.values().filter { it == LibraryTab.SONGS || it.name !in hiddenTabNames }
     }
     val titleBrush = if (titleGradientEnabled) {
-        // A luminosidade do texto acompanha a superfície REAL onde ele é
+        // A claridade do texto acompanha a superfície REAL onde ele é
         // desenhado (clara/escura do tema atual), não a cor de origem do
-        // gradiente — ver o comentário em cima de readableGradientTextColor.
+        // gradiente — ver o comentário em cima de readableGradientTextColors.
         val surfaceIsDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
         if (titleGradientColorStart != null && titleGradientColorEnd != null) {
             // Cores escolhidas livremente pelo usuário na roda de cores.
-            Brush.linearGradient(listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!)).map { readableGradientTextColor(it, surfaceIsDark) })
+            val source = listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!))
+            Brush.linearGradient(readableGradientTextColors(source, surfaceIsDark))
         } else {
             val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.APP_ICON
-            Brush.linearGradient(theme.colorsArgb.map { readableGradientTextColor(Color(it), surfaceIsDark) })
+            val source = theme.colorsArgb.map { Color(it) }
+            Brush.linearGradient(readableGradientTextColors(source, surfaceIsDark))
         }
     } else null
 
