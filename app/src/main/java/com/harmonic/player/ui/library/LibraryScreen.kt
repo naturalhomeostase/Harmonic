@@ -146,17 +146,19 @@ private val playlistSortOptions = listOf(
  * eram parecidas em tom (ex: os dois azuis do tema "Oceano"), o resultado
  * virava praticamente uma cor só, sem graça de gradiente nenhuma.
  *
- * Agora as duas pontas ficam dentro de uma FAIXA (não um valor fixo) —
- * a que era mais clara na cor original continua um pouco mais clara que a
- * outra dentro dessa faixa, e vice-versa. Sempre dentro da zona legível
- * (nunca escura o suficiente pra sumir no fundo escuro, nem clara o
- * suficiente pra sumir no fundo claro), mas com uma diferença de claridade
- * real entre as duas pontas — dá pra ver que é um gradiente de verdade, não
- * só duas variações quase iguais do mesmo tom.
+ * Ajuste importante sobre CLARIDADE (lightness) em si: no modelo HSL,
+ * quanto mais perto do branco (L alto) ou do preto (L baixo), mais
+ * "lavada"/pastel uma cor parece — não importa a saturação. O ponto onde
+ * uma cor fica mais VIVA de verdade é numa claridade média (nem perto do
+ * branco nem do preto). A faixa abaixo mira nesse meio-termo — claridade
+ * moderada (não mais perto do topo/base da escala), então as cores saem
+ * saturadas e vivas de verdade, mantendo contraste suficiente com o fundo
+ * escuro/claro do app (uma cor saturada em claridade média já contrasta
+ * bem contra preto ou branco puro — não precisa chegar perto do extremo).
  */
 private fun readableGradientTextColors(sourceColors: List<Color>, surfaceIsDark: Boolean): List<Color> {
-    val bandLow = if (surfaceIsDark) 0.66f else 0.14f
-    val bandHigh = if (surfaceIsDark) 0.92f else 0.34f
+    val bandLow = if (surfaceIsDark) 0.52f else 0.30f
+    val bandHigh = if (surfaceIsDark) 0.70f else 0.46f
 
     val hsls = sourceColors.map { color ->
         FloatArray(3).also { androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), it) }
@@ -169,7 +171,7 @@ private fun readableGradientTextColors(sourceColors: List<Color>, surfaceIsDark:
 
     return hsls.mapIndexed { index, hsl ->
         val rank = order.indexOf(index)
-        hsl[1] = (hsl[1] * 1.3f).coerceAtMost(1f)
+        hsl[1] = (hsl[1] * 1.4f).coerceAtMost(1f)
         hsl[2] = bandLow + step * rank
         Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
     }
