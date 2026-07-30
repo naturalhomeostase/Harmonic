@@ -221,6 +221,15 @@ class EqualizerController {
         if (_uiState.value.ready) reapplyCurrentState()
     }
 
+    /** Zera bandas, bass boost, virtualizador e reverb — mantém o equalizador ligado/desligado como estava. */
+    fun resetAll() {
+        val zeroLevels = List(_uiState.value.bands.size) { 0 }
+        zeroLevels.forEachIndexed { index, level -> setBandLevel(index, level) }
+        setBassBoostStrength(0)
+        setVirtualizerStrength(0)
+        setReverbPreset(0)
+    }
+
     fun release() {
         equalizer?.release(); equalizer = null
         bassBoost?.release(); bassBoost = null

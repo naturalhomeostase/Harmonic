@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ fun EqualizerScreen(
 ) {
     val scope = rememberCoroutineScope()
     val eqState by equalizerController.uiState.collectAsState()
+    var showResetConfirm by remember { mutableStateOf(false) }
 
     // Rede de segurança extra: sempre que essa tela abre, tenta conectar de
     // novo com o ID de sessão mais recente conhecido — em vez de confiar
@@ -41,6 +43,31 @@ fun EqualizerScreen(
         }
     }
 
+    if (showResetConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirm = false },
+            title = { Text("Resetar equalizador?") },
+            text = { Text("Bandas de frequência, Bass Boost, Virtualizador e Reverb voltam todos a zero. Essa ação não pode ser desfeita.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    equalizerController.resetAll()
+                    scope.launch {
+                        settings.setEqBandLevels(eqState.bands.map { 0 })
+                        settings.setBassBoostStrength(0)
+                        settings.setVirtualizerStrength(0)
+                        settings.setReverbPreset(0)
+                    }
+                    showResetConfirm = false
+                }) {
+                    Text("Resetar", color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirm = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -52,6 +79,19 @@ fun EqualizerScreen(
                     }
                 },
                 actions = {
+                    // Só faz sentido resetar se já existe reprodução conectada — sem
+                    // isso, um toque aqui não teria efeito nenhum (nada pra resetar).
+                    IconButton(
+                        onClick = { showResetConfirm = true },
+                        enabled = eqState.ready
+                    ) {
+                        Icon(
+                            Icons.Filled.RestartAlt,
+                            contentDescription = "Resetar equalizador",
+                            tint = if (eqState.ready) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        )
+                    }
                     com.harmonic.player.ui.common.ThemedSwitch(
                         checked = eqState.enabled,
                         onCheckedChange = { enabled ->
@@ -121,7 +161,23 @@ fun EqualizerScreen(
                                 scope.launch { settings.setEqEnabled(true) }
                             }
                         },
-                        label = { Text(preset.name) }
+                        label = { Text(preset.name) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            labelColor = MaterialTheme.colorScheme.primary,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ),
+                        // A borda padrão do FilterChip é um cinza fixo do
+                        // Material, que em temas mais escuros/saturados
+                        // ficava quase invisível. Usando a cor de destaque
+                        // do tema (mais discreta, com alpha), o contorno
+                        // sempre tem contraste suficiente, seja qual for o
+                        // tema escolhido.
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = false,
+                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                            borderWidth = 1.dp
+                        )
                     )
                 }
             }
@@ -150,6 +206,13 @@ fun EqualizerScreen(
                                     scope.launch { settings.setEqBandLevels(eqState.bandLevels) }
                                 },
                                 valueRange = band.minLevel.toFloat()..band.maxLevel.toFloat(),
+                                // Mesmo ajuste da tela de Aparência (blur/sombra): a
+                                // trilha "restante" cinza destoava da cor de destaque
+                                // do tema, então agora usa a mesma cor, só mais clara.
+                                colors = SliderDefaults.colors(
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                                ),
                                 modifier = Modifier
                                     .width(160.dp)
                                     .rotate(-90f)
@@ -181,7 +244,11 @@ fun EqualizerScreen(
                 value = eqState.bassBoostStrength.toFloat(),
                 onValueChange = { equalizerController.setBassBoostStrength(it.toInt()) },
                 onValueChangeFinished = { scope.launch { settings.setBassBoostStrength(eqState.bassBoostStrength) } },
-                valueRange = 0f..1000f
+                valueRange = 0f..1000f,
+                colors = SliderDefaults.colors(
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                )
             )
 
             Spacer(Modifier.height(8.dp))
@@ -199,7 +266,11 @@ fun EqualizerScreen(
                 value = eqState.virtualizerStrength.toFloat(),
                 onValueChange = { equalizerController.setVirtualizerStrength(it.toInt()) },
                 onValueChangeFinished = { scope.launch { settings.setVirtualizerStrength(eqState.virtualizerStrength) } },
-                valueRange = 0f..1000f
+                valueRange = 0f..1000f,
+                colors = SliderDefaults.colors(
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                )
             )
 
             Spacer(Modifier.height(8.dp))

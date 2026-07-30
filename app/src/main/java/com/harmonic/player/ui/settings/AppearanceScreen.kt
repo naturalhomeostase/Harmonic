@@ -259,7 +259,14 @@ fun AppearanceScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 contentPadding = PaddingValues(vertical = 4.dp)
             ) {
                 items(com.harmonic.player.data.GradientTheme.values().toList()) { theme ->
-                    val isSelected = currentCustomBg == null && currentWallpaper == null && currentGradient == theme.name
+                    // `currentGradient == null` é o estado de fábrica (nunca
+                    // foi salvo nada) — nesse caso o app já cai no gradiente
+                    // padrão (APP_ICON) em todo lugar que lê essa config, mas
+                    // a comparação abaixo não reconhecia isso e a lista de
+                    // temas ficava sem NENHUM item marcado, mesmo com
+                    // "Music Box" sendo o que realmente está em uso.
+                    val isSelected = currentCustomBg == null && currentWallpaper == null &&
+                        (currentGradient == theme.name || (currentGradient == null && theme == com.harmonic.player.data.GradientTheme.APP_ICON))
                     Box(
                         modifier = Modifier
                             .size(width = 88.dp, height = 120.dp)
