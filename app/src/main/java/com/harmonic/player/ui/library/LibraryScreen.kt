@@ -130,25 +130,36 @@ private val playlistSortOptions = listOf(
 )
 
 /**
- * Reforça DE LEVE uma cor de tema pra ela ficar um pouco mais viva como
- * texto em gradiente — sem se afastar muito da cor original da imagem/tema.
- * Existia uma versão anterior aqui que forçava um PISO MÍNIMO de saturação
- * (0.55) — em cores quase cinzas (saturação perto de zero, matiz instável
- * numericamente), isso "inventava" uma cor praticamente aleatória em vez de
- * reforçar a original (foi assim que uma imagem rosa-e-cinza virou um roxo
- * forte no gradiente do título). Agora é só um MULTIPLICADOR suave sobre a
- * saturação já existente — uma cor quase cinza continua quase cinza, só um
- * pouco mais viva — e a luminosidade só é tocada nos extremos (escura
- * demais pra ler, ou clara demais e "estourada"). Isso NÃO tem nenhuma
- * relação com a extração de cor por música da tela "Tocando agora", que é
- * um sistema totalmente separado.
+ * Deriva a cor do TEXTO a partir da cor do FUNDO naquele ponto (do tema, da
+ * imagem, ou da bolinha que o usuário escolheu), mantendo o mesmo matiz —
+ * pra sempre combinar com o fundo — mas SEM ficar parecida demais com ele.
+ *
+ * Existia uma versão anterior aqui que só evitava os EXTREMOS de
+ * luminosidade (nem escura, nem clara demais), mas deixava a luminosidade
+ * do texto praticamente igual à do fundo — e como as duas vêm da MESMA cor,
+ * o texto quase sempre saía parecido demais com o próprio fundo em cima do
+ * qual ele é desenhado (baixo contraste, "apagado", mesmo passando pelo
+ * ajuste). Agora a luminosidade do texto vai pro EXTREMO OPOSTO ao do
+ * fundo: fundo escuro -> texto vira uma versão bem clara e viva do mesmo
+ * tom; fundo claro -> texto vira uma versão bem escura e saturada. Sempre
+ * garante um salto grande de contraste, sem trocar o matiz (por isso ainda
+ * combina) e sem inventar uma cor aleatória.
+ *
+ * Existia também uma versão ainda mais antiga que forçava um PISO MÍNIMO de
+ * saturação (0.55) — em cores quase cinzas (saturação perto de zero, matiz
+ * instável numericamente), isso "inventava" uma cor praticamente aleatória
+ * em vez de reforçar a original (foi assim que uma imagem rosa-e-cinza
+ * virou um roxo forte no gradiente do título). Por isso aqui a saturação
+ * continua sendo só um MULTIPLICADOR suave sobre a que já existia — uma cor
+ * quase cinza continua quase cinza (só um pouco mais viva), nunca ganha um
+ * matiz novo do nada. Isso NÃO tem nenhuma relação com a extração de cor
+ * por música da tela "Tocando agora", que é um sistema totalmente separado.
  */
-private fun readableGradientTextColor(color: Color): Color {
+private fun readableGradientTextColor(background: Color): Color {
     val hsl = FloatArray(3)
-    androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), hsl)
-    hsl[1] = (hsl[1] * 1.25f).coerceAtMost(1f)
-    if (hsl[2] < 0.3f) hsl[2] = 0.3f + hsl[2] * 0.3f
-    else if (hsl[2] > 0.88f) hsl[2] = 0.88f
+    androidx.core.graphics.ColorUtils.colorToHSL(background.toArgb(), hsl)
+    hsl[1] = (hsl[1] * 1.3f).coerceAtMost(1f)
+    hsl[2] = if (hsl[2] > 0.5f) 0.18f else 0.90f
     return Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
 }
 

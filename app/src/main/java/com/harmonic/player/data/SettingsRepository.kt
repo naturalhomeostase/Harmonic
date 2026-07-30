@@ -34,13 +34,15 @@ enum class DefaultWallpaper(val assetPath: String, val label: String) {
  * não precisar depender do Compose.
  */
 enum class GradientTheme(val label: String, val colorsArgb: List<Long>) {
-    // Tema padrão — cores tiradas do ícone atual do app (o gramofone
-    // dourado): um âmbar/bronze mais rico numa ponta e um creme dourado
-    // quente na outra, ecoando o metal e a caixinha de música do ícone,
-    // só um pouco mais vivos/saturados do que uma amostra literal da
-    // imagem ficaria (uma cor "crua" tirada do ícone tende a sair meio
-    // sem graça/acinzentada como fundo de tela inteira).
-    APP_ICON("Music Box", listOf(0xFFB6812B, 0xFFFFE9C4)),
+    // Paleta nova do tema padrão, trocada por completo (a antiga — bronze
+    // claro pra creme quase branco — não agradou e ainda coincidia com
+    // outros bugs de cor). Agora vai de um marrom bem escuro e profundo
+    // (quase preto, lembrando o corpo de madeira/metal escuro de uma
+    // vitrola antiga) até um dourado bem vivo e saturado — o mesmo tom
+    // usado como cor de destaque em Theme.kt — criando um gradiente com
+    // bem mais contraste e "peso" do que o anterior, ainda dentro da
+    // família de cor do ícone (dourado/âmbar).
+    APP_ICON("Music Box", listOf(0xFF2B1B0E, 0xFFE3A63E)),
     // Tirei os temas azuis, o rosa (Rosé) e o roxo (Neon) — eram
     // exatamente os que ficavam com a cor de destaque opaca/estranha.
     SUNSET("Pôr do sol", listOf(0xFFFFD200, 0xFFDD2476)),

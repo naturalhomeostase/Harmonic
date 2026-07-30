@@ -6,18 +6,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
+// Paleta nova do tema padrão "Music Box" — trocada por completo a pedido do
+// usuário (a antiga causava problema atrás de problema: rosa órfão herdado
+// de um tema removido, Material You do sistema disfarçado de "padrão", e
+// agora o roxo de fábrica do Material 3 vazando nos containers). Em vez de
+// tentar consertar remendo por remendo, a cor em si mudou: um dourado mais
+// vivo e saturado (perto do metal do gramofone no ícone do app), com um
+// castanho bem mais escuro/rico no modo claro pra manter contraste.
 private val fallbackDarkColors = darkColorScheme(
-    primary = Color(0xFFD9A94F),      // dourado do ícone do app (tema padrão "Music Box")
-    secondary = Color(0xFFD9A94F),
-    tertiary = Color(0xFFD9A94F),
+    primary = Color(0xFFE3A63E),      // dourado vivo, inspirado no ícone (tema padrão "Music Box")
+    secondary = Color(0xFFE3A63E),
+    tertiary = Color(0xFFE3A63E),
     background = Color(0xFF000000),
     surface = Color(0xFF1A1A1D)
 )
 
 private val fallbackLightColors = lightColorScheme(
-    primary = Color(0xFF9C6B1E),
-    secondary = Color(0xFF9C6B1E),
-    tertiary = Color(0xFF9C6B1E)
+    primary = Color(0xFF8B5A1F),
+    secondary = Color(0xFF8B5A1F),
+    tertiary = Color(0xFF8B5A1F)
 )
 
 enum class ThemeMode { LIGHT, DARK, AMOLED, SYSTEM }
@@ -90,32 +97,26 @@ fun HarmonicTheme(
     val fallbackScheme = if (useDark) fallbackDarkColors else fallbackLightColors
 
     /*
-     * ESSA era a causa raiz da cor rosê que insistia em voltar mesmo depois
-     * de limpar a cor de destaque e reinstalar o app: em qualquer aparelho
-     * Android 12+ (a maioria hoje em dia), sempre que NENHUMA cor de
-     * destaque manual estava escolhida — que é exatamente a situação do
-     * tema padrão "Music Box" — o app caía nesse branch de Material You
-     * dinâmico, que pega a cor automaticamente do PAPEL DE PAREDE DO
-     * SISTEMA (não tem nada a ver com o tema escolhido dentro do app). Se
-     * o papel de parede do celular tem tons rosados, o Android calcula uma
-     * paleta rosada e ela virava a cor de destaque do app inteiro — nome
-     * "Music Box", sublinhados, ícones — por baixo do fallback dourado
-     * fixo, que na prática nunca era alcançado nesses aparelhos. Isso
-     * explica por que nada dentro do app (trocar tema, reinstalar) resolvia:
-     * a fonte da cor estava fora do app.
-     *
-     * O app não tem nenhuma opção de "cor automática do sistema" nas
-     * configurações de Aparência — os únicos temas disponíveis usam cores
-     * fixas definidas no próprio app — então esse comportamento automático
-     * nunca era, de fato, uma escolha do usuário. Removido: agora, sem uma
-     * cor manual (ou extraída da capa do álbum), o app sempre usa o
-     * dourado/bronze fixo do ícone, como o tema padrão "Music Box" sempre
-     * prometeu.
+     * Histórico dos bugs que passaram por aqui, pra quem for mexer depois:
+     * 1) Cor rosê órfã presa no DataStore de um tema removido (Rosé) — sem
+     *    relação com este arquivo, resolvido na migração do
+     *    SettingsRepository.
+     * 2) Material You do Android (cor tirada do papel de parede do
+     *    SISTEMA) disfarçado de tema "padrão" sempre que nenhuma cor manual
+     *    estava escolhida — removido; esse app não tem essa opção nas
+     *    configurações, então nunca foi uma escolha real do usuário.
+     * 3) Por causa da correção acima, o fallback passou a pular o
+     *    `withSingleAccent` — e como `darkColorScheme(primary = ...)` só
+     *    define o `primary`, todo o resto (como `primaryContainer`/
+     *    `onPrimaryContainer`, usados pelo botão "+") caía nas cores de
+     *    FÁBRICA do Material 3, que são roxas. Corrigido chamando
+     *    `withSingleAccent` também nesse caminho, pra TODOS os papéis de
+     *    cor virem da mesma cor de destaque.
      */
     val baseScheme = when {
         customAccentColor != null -> fallbackScheme.withSingleAccent(customAccentColor)
         albumArtSeedColor != null -> fallbackScheme.withSingleAccent(albumArtSeedColor)
-        else -> fallbackScheme
+        else -> fallbackScheme.withSingleAccent(fallbackScheme.primary)
     }
 
     val colorScheme = if (themeMode == ThemeMode.AMOLED) {
