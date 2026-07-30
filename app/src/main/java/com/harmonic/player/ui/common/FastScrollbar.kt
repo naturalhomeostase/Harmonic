@@ -1,7 +1,8 @@
 package com.harmonic.player.ui.common
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
@@ -17,11 +18,41 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+
+/**
+ * Detecta toque + arrasto na barrinha, mas — diferente de `detectDragGestures`
+ * — já pula pra posição tocada no exato instante em que o dedo encosta, sem
+ * exigir que ele se mova primeiro (é o que fazia o usuário precisar "puxar"
+ * a barra inteira desde onde tocou até o fim, em vez de simplesmente tocar
+ * onde queria ir). Continua acompanhando a posição do dedo enquanto ele
+ * ficar pressionado, então também funciona como arrasto normal depois disso.
+ */
+private suspend fun PointerInputScope.detectPressAndDragToJump(
+    onDraggingChanged: (Boolean) -> Unit,
+    onPositionChanged: (Float) -> Unit
+) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        down.consume()
+        onDraggingChanged(true)
+        onPositionChanged(down.position.y)
+        val pointerId = down.id
+        while (true) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+            if (!change.pressed) break
+            change.consume()
+            onPositionChanged(change.position.y)
+        }
+        onDraggingChanged(false)
+    }
+}
 
 /**
  * Barrinha fina na cor de destaque (com transparência) do lado direito da
@@ -68,20 +99,18 @@ fun FastScrollbar(
             .width(28.dp)
             .onSizeChanged { trackHeightPx = it.height.toFloat() }
             .pointerInput(itemCount, visibleCount) {
-                detectDragGestures(
-                    onDragStart = { dragging = true },
-                    onDragEnd = { dragging = false },
-                    onDragCancel = { dragging = false }
-                ) { change, _ ->
-                    change.consume()
-                    if (trackHeightPx <= 0f) return@detectDragGestures
-                    val usableHeight = trackHeightPx * (1f - thumbFraction)
-                    val thumbTopPx = (change.position.y - (trackHeightPx * thumbFraction / 2f))
-                        .coerceIn(0f, usableHeight.coerceAtLeast(0f))
-                    val frac = if (usableHeight > 0f) thumbTopPx / usableHeight else 0f
-                    val targetIndex = (frac * scrollableRange).toInt().coerceIn(0, itemCount - 1)
-                    scope.launch { listState.scrollToItem(targetIndex) }
-                }
+                detectPressAndDragToJump(
+                    onDraggingChanged = { dragging = it },
+                    onPositionChanged = { y ->
+                        if (trackHeightPx <= 0f) return@detectPressAndDragToJump
+                        val usableHeight = trackHeightPx * (1f - thumbFraction)
+                        val thumbTopPx = (y - (trackHeightPx * thumbFraction / 2f))
+                            .coerceIn(0f, usableHeight.coerceAtLeast(0f))
+                        val frac = if (usableHeight > 0f) thumbTopPx / usableHeight else 0f
+                        val targetIndex = (frac * scrollableRange).toInt().coerceIn(0, itemCount - 1)
+                        scope.launch { listState.scrollToItem(targetIndex) }
+                    }
+                )
             }
     ) {
         val thumbOffsetPx = trackHeightPx * (1f - thumbFraction) * scrollFraction
@@ -126,19 +155,17 @@ fun FastScrollbarPlain(
             .width(28.dp)
             .onSizeChanged { viewportHeightPx = it.height.toFloat() }
             .pointerInput(scrollState.maxValue) {
-                detectDragGestures(
-                    onDragStart = { dragging = true },
-                    onDragEnd = { dragging = false },
-                    onDragCancel = { dragging = false }
-                ) { change, _ ->
-                    change.consume()
-                    if (viewportHeightPx <= 0f) return@detectDragGestures
-                    val usableHeight = viewportHeightPx * (1f - thumbFraction)
-                    val thumbTopPx = (change.position.y - (viewportHeightPx * thumbFraction / 2f))
-                        .coerceIn(0f, usableHeight.coerceAtLeast(0f))
-                    val frac = if (usableHeight > 0f) thumbTopPx / usableHeight else 0f
-                    scope.launch { scrollState.scrollTo((frac * scrollState.maxValue).toInt()) }
-                }
+                detectPressAndDragToJump(
+                    onDraggingChanged = { dragging = it },
+                    onPositionChanged = { y ->
+                        if (viewportHeightPx <= 0f) return@detectPressAndDragToJump
+                        val usableHeight = viewportHeightPx * (1f - thumbFraction)
+                        val thumbTopPx = (y - (viewportHeightPx * thumbFraction / 2f))
+                            .coerceIn(0f, usableHeight.coerceAtLeast(0f))
+                        val frac = if (usableHeight > 0f) thumbTopPx / usableHeight else 0f
+                        scope.launch { scrollState.scrollTo((frac * scrollState.maxValue).toInt()) }
+                    }
+                )
             }
     ) {
         val thumbOffsetPx = viewportHeightPx * (1f - thumbFraction) * scrollFraction
@@ -185,20 +212,18 @@ fun FastScrollbarGrid(
             .width(28.dp)
             .onSizeChanged { trackHeightPx = it.height.toFloat() }
             .pointerInput(itemCount, visibleCount) {
-                detectDragGestures(
-                    onDragStart = { dragging = true },
-                    onDragEnd = { dragging = false },
-                    onDragCancel = { dragging = false }
-                ) { change, _ ->
-                    change.consume()
-                    if (trackHeightPx <= 0f) return@detectDragGestures
-                    val usableHeight = trackHeightPx * (1f - thumbFraction)
-                    val thumbTopPx = (change.position.y - (trackHeightPx * thumbFraction / 2f))
-                        .coerceIn(0f, usableHeight.coerceAtLeast(0f))
-                    val frac = if (usableHeight > 0f) thumbTopPx / usableHeight else 0f
-                    val targetIndex = (frac * scrollableRange).toInt().coerceIn(0, itemCount - 1)
-                    scope.launch { gridState.scrollToItem(targetIndex) }
-                }
+                detectPressAndDragToJump(
+                    onDraggingChanged = { dragging = it },
+                    onPositionChanged = { y ->
+                        if (trackHeightPx <= 0f) return@detectPressAndDragToJump
+                        val usableHeight = trackHeightPx * (1f - thumbFraction)
+                        val thumbTopPx = (y - (trackHeightPx * thumbFraction / 2f))
+                            .coerceIn(0f, usableHeight.coerceAtLeast(0f))
+                        val frac = if (usableHeight > 0f) thumbTopPx / usableHeight else 0f
+                        val targetIndex = (frac * scrollableRange).toInt().coerceIn(0, itemCount - 1)
+                        scope.launch { gridState.scrollToItem(targetIndex) }
+                    }
+                )
             }
     ) {
         val thumbOffsetPx = trackHeightPx * (1f - thumbFraction) * scrollFraction

@@ -23,6 +23,19 @@ private val fallbackLightColors = lightColorScheme(
 enum class ThemeMode { LIGHT, DARK, AMOLED, SYSTEM }
 
 /**
+ * Decide se um texto/ícone branco ou escuro tem mais contraste em cima da
+ * cor passada — usando a fórmula de luminância relativa (a mesma ideia por
+ * trás das recomendações de contraste do WCAG). Sem isso, o "+" de
+ * adicionar músicas (e qualquer outro ícone/texto sobre a cor de destaque)
+ * ficava branco fixo, o que sumia quando a cor de destaque escolhida era
+ * clara (pastel, amarelo claro etc).
+ */
+private fun contrastingOn(accent: Color): Color {
+    val luminance = 0.2126f * accent.red + 0.7152f * accent.green + 0.0722f * accent.blue
+    return if (luminance > 0.6f) Color(0xFF1A1A1A) else Color.White
+}
+
+/**
  * Aplica UMA cor de destaque em todos os "papéis" de cor do Material3 que
  * normalmente ficariam roxos por padrão (secondary/tertiary e seus
  * containers) quando só o `primary` é customizado. Sem isso, componentes
@@ -30,21 +43,24 @@ enum class ThemeMode { LIGHT, DARK, AMOLED, SYSTEM }
  * alguns estados, mostram o roxo padrão do Material Design em vez da cor
  * escolhida pelo usuário.
  */
-fun ColorScheme.withSingleAccent(accent: Color): ColorScheme = copy(
-    primary = accent,
-    onPrimary = Color.White,
-    primaryContainer = accent,
-    onPrimaryContainer = Color.White,
-    secondary = accent,
-    onSecondary = Color.White,
-    secondaryContainer = accent.copy(alpha = 0.3f),
-    onSecondaryContainer = Color.White,
-    tertiary = accent,
-    onTertiary = Color.White,
-    tertiaryContainer = accent.copy(alpha = 0.3f),
-    onTertiaryContainer = Color.White,
-    inversePrimary = accent
-)
+fun ColorScheme.withSingleAccent(accent: Color): ColorScheme {
+    val onAccent = contrastingOn(accent)
+    return copy(
+        primary = accent,
+        onPrimary = onAccent,
+        primaryContainer = accent,
+        onPrimaryContainer = onAccent,
+        secondary = accent,
+        onSecondary = onAccent,
+        secondaryContainer = accent.copy(alpha = 0.3f),
+        onSecondaryContainer = onAccent,
+        tertiary = accent,
+        onTertiary = onAccent,
+        tertiaryContainer = accent.copy(alpha = 0.3f),
+        onTertiaryContainer = onAccent,
+        inversePrimary = accent
+    )
+}
 
 /**
  * Tema principal do Harmonic.

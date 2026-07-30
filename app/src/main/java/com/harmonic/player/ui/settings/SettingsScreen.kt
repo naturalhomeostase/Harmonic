@@ -194,10 +194,6 @@ fun SettingsScreen(
                 }
             )
         }
-        com.harmonic.player.ui.common.FastScrollbarPlain(
-            scrollState = settingsScrollState,
-            modifier = Modifier.align(Alignment.CenterEnd)
-        )
         }
     }
 
