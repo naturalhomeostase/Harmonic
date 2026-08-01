@@ -1,0 +1,535 @@
+package com.harmonic.player.playback
+
+import android.content.ComponentName
+import android.content.Context
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.MoreExecutors
+import com.harmonic.player.data.SettingsRepository
+import com.harmonic.player.data.Song
+import com.harmonic.player.data.SongDao
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+data class PlaybackUiState(
+    val currentSong: Song? = null,
+    val isPlaying: Boolean = false,
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+    val shuffleEnabled: Boolean = false,
+    val repeatMode: Int = Player.REPEAT_MODE_OFF,
+    val queue: List<Song> = emptyList(),
+    val currentIndex: Int = -1,
+    /**
+     * IDs de músicas que o usuário colocou manualmente na fila ("Tocar a
+     * seguir" / "Adicionar à fila") e que ainda não foram tocadas. Usado só
+     * pra mostrar o ícone de fila no miniplayer — não afeta a reprodução em
+     * si. É recalculado (mantendo só o que ainda está à frente da faixa
+     * atual) toda vez que a fila ou o índice atual mudam.
+     */
+    val manuallyQueuedSongIds: Set<Long> = emptySet(),
+    // Sleep timer: null = desativado, -1 = "parar no fim da música atual"
+    val sleepTimerEndAt: Long? = null,
+    val sleepTimerRemainingMs: Long = 0,
+    // A-B Repeat: repete só o trecho entre os dois pontos, em loop
+    val pointA: Long? = null,
+    val pointB: Long? = null,
+    /**
+     * Identifica de "onde" a fila atual veio (ex: "playlist:5", "album:12",
+     * "artist:Xis", "library") — usado só pra saber se um novo play() está
+     * trocando de contexto (pra decidir se avisa antes de resetar
+     * shuffle/repeat) ou é só continuar navegando dentro do mesmo lugar.
+     */
+    val sourceKey: String? = null
+)
+
+/** Um play() que está esperando confirmação do usuário porque trocaria de contexto com shuffle/repeat ativos. */
+data class PendingPlayRequest(
+    val songs: List<Song>,
+    val startIndex: Int,
+    val sourceKey: String,
+    val sourceLabel: String,
+    val shuffled: Boolean = false
+)
+
+/**
+ * Envolve o MediaController do Media3 numa API simples de usar a partir do
+ * Compose, e cuida de salvar/restaurar a fila de reprodução entre sessões
+ * do app (via [SettingsRepository]) e de resolver a música atual a partir
+ * do [SongDao], sem depender dos metadados (com perda) do MediaItem.
+ */
+class PlayerController(
+    private val context: Context,
+    private val dao: SongDao,
+    private val settings: SettingsRepository
+) {
+
+    private var controller: MediaController? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var sleepTimerJob: Job? = null
+    private var positionSaveJob: Job? = null
+
+    private val _uiState = MutableStateFlow(PlaybackUiState())
+    val uiState: StateFlow<PlaybackUiState> = _uiState.asStateFlow()
+
+    private val _pendingPlayRequest = MutableStateFlow<PendingPlayRequest?>(null)
+    val pendingPlayRequest: StateFlow<PendingPlayRequest?> = _pendingPlayRequest.asStateFlow()
+
+    fun connect(onConnected: () -> Unit = {}) {
+        val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+        controllerFuture.addListener({
+            controller = controllerFuture.get()
+            attachListener()
+            // O listener acima só é avisado de MUDANÇAS futuras — se o
+            // serviço já estava tocando em segundo plano quando o app foi
+            // reaberto (ex: música tocando com o app fechado), nenhum
+            // "onIsPlayingChanged" é disparado, porque isPlaying não mudou.
+            // Sem isso, o mini player ficava preso mostrando o ícone de
+            // play mesmo com a música already tocando. Sincroniza o estado
+            // atual do controller manualmente logo após conectar.
+            syncInitialStateFromController()
+            resolveQueueFromControllerIfNeeded()
+            startPeriodicPositionSave()
+            startABRepeatMonitor()
+            onConnected()
+        }, MoreExecutors.directExecutor())
+    }
+
+    private fun syncInitialStateFromController() {
+        val c = controller ?: return
+        _uiState.value = _uiState.value.copy(
+            isPlaying = c.isPlaying,
+            shuffleEnabled = c.shuffleModeEnabled,
+            repeatMode = c.repeatMode,
+            durationMs = c.duration.coerceAtLeast(0),
+            positionMs = c.currentPosition.coerceAtLeast(0)
+        )
+    }
+
+    private fun resolveQueueFromControllerIfNeeded() {
+        val c = controller ?: return
+        if (c.mediaItemCount == 0 || _uiState.value.queue.isNotEmpty()) return
+        scope.launch {
+            val ids = (0 until c.mediaItemCount).mapNotNull { i ->
+                c.getMediaItemAt(i).mediaId.toLongOrNull()
+            }
+            val songsById = dao.getSongsByIds(ids).associateBy { it.id }
+            val orderedSongs = ids.mapNotNull { songsById[it] }
+            if (orderedSongs.isNotEmpty()) {
+                val index = c.currentMediaItemIndex
+                _uiState.value = _uiState.value.copy(
+                    queue = orderedSongs,
+                    currentIndex = index,
+                    currentSong = orderedSongs.getOrNull(index),
+                    durationMs = c.duration.coerceAtLeast(0)
+                )
+            }
+        }
+    }
+
+    private fun attachListener() {
+        controller?.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                _uiState.value = _uiState.value.copy(isPlaying = isPlaying)
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                updateCurrentSongFromIndex()
+                persistQueueSnapshot()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) {
+                    _uiState.value = _uiState.value.copy(
+                        durationMs = controller?.duration?.coerceAtLeast(0) ?: 0
+                    )
+                }
+            }
+
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                _uiState.value = _uiState.value.copy(shuffleEnabled = shuffleModeEnabled)
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                _uiState.value = _uiState.value.copy(repeatMode = repeatMode)
+            }
+        })
+    }
+
+    /**
+     * Mantém [PlaybackUiState.manuallyQueuedSongIds] só com o que ainda está
+     * à frente da faixa atual — sem isso, o ícone de fila no miniplayer
+     * continuaria aceso pra sempre depois que a música "furada" já tivesse
+     * tocado e ficado pra trás na lista.
+     */
+    private fun pruneManuallyQueuedIds() {
+        val state = _uiState.value
+        if (state.manuallyQueuedSongIds.isEmpty()) return
+        val upcomingIds = state.queue.drop((state.currentIndex + 1).coerceAtLeast(0)).map { it.id }.toSet()
+        val pruned = state.manuallyQueuedSongIds intersect upcomingIds
+        if (pruned != state.manuallyQueuedSongIds) {
+            _uiState.value = state.copy(manuallyQueuedSongIds = pruned)
+        }
+    }
+
+    private fun updateCurrentSongFromIndex() {
+        val index = controller?.currentMediaItemIndex ?: -1
+        val song = _uiState.value.queue.getOrNull(index)
+        _uiState.value = _uiState.value.copy(
+            currentSong = song,
+            currentIndex = index,
+            durationMs = controller?.duration?.coerceAtLeast(0) ?: 0
+        )
+        pruneManuallyQueuedIds()
+        // "Corte": se a música tem um ponto de início definido (menu
+        // Cortar), pula direto pra lá em vez de tocar do começo de verdade.
+        // Isso não recodifica o arquivo — só ajusta onde a reprodução
+        // começa/termina, então o arquivo original nunca é alterado.
+        if (song != null && song.trimStartMs > 0) {
+            controller?.seekTo(song.trimStartMs)
+        }
+    }
+
+    fun playQueue(songs: List<Song>, startIndex: Int, sourceKey: String = "default", shuffled: Boolean? = null) {
+        val items = songs.map { it.toMediaItem() }
+        _uiState.value = _uiState.value.copy(
+            queue = songs,
+            currentSong = songs.getOrNull(startIndex),
+            currentIndex = startIndex,
+            isPlaying = true, // otimista: evita o ícone de play "atrasado" até o callback confirmar
+            sourceKey = sourceKey,
+            manuallyQueuedSongIds = emptySet() // nova fila = nenhuma inserção manual pendente ainda
+        )
+        val startPositionMs = songs.getOrNull(startIndex)?.trimStartMs?.takeIf { it > 0 } ?: 0L
+        controller?.setMediaItems(items, startIndex, startPositionMs)
+        controller?.prepare()
+        // `shuffled == null` (o caso comum — tocar uma música tocando em
+        // qualquer lista normal) deixa o modo aleatório do jeito que já
+        // estava, sem mexer nele. Só quando um chamador pede explicitamente
+        // (o botão "Aleatório"/"Aleatório: tudo", ou o reset de contexto em
+        // confirmPendingPlay) é que a gente liga/desliga de verdade —
+        // antes, os botões de "Aleatório" da Biblioteca só chamavam
+        // `songs.shuffled()` e tocavam essa lista congelada como fila
+        // normal: a primeira música até saía numa ordem aleatória, mas o
+        // modo aleatório do player continuava OFF (o ícone em "Tocando
+        // agora" não acendia, e pular música seguia a ordem congelada, não
+        // uma ordem aleatória de verdade a cada vez).
+        if (shuffled != null) {
+            controller?.shuffleModeEnabled = shuffled
+            _uiState.value = _uiState.value.copy(shuffleEnabled = shuffled)
+        }
+        controller?.play()
+        persistQueueSnapshot()
+    }
+
+    /**
+     * Mesmo que [playQueue], mas verifica antes se isso trocaria de
+     * contexto (ex: estava numa playlist com shuffle ligado, e agora vai
+     * tocar um álbum) — nesse caso, guarda o pedido em [pendingPlayRequest]
+     * em vez de tocar na hora, pra tela mostrar um aviso e o usuário
+     * confirmar (ou cancelar) antes de perder o shuffle/repeat anterior.
+     * Quando não há conflito real (mesmo contexto, ou nada tocando ainda,
+     * ou shuffle/repeat já desligados), toca direto sem perguntar nada.
+     */
+    fun requestPlayQueue(songs: List<Song>, startIndex: Int, sourceKey: String, sourceLabel: String, shuffled: Boolean? = null) {
+        val state = _uiState.value
+        val hasActiveModifiers = state.shuffleEnabled || state.repeatMode != Player.REPEAT_MODE_OFF
+        val isDifferentContext = state.sourceKey != null && state.sourceKey != sourceKey && state.queue.isNotEmpty()
+        if (hasActiveModifiers && isDifferentContext) {
+            _pendingPlayRequest.value = PendingPlayRequest(songs, startIndex, sourceKey, sourceLabel, shuffled ?: false)
+        } else {
+            playQueue(songs, startIndex, sourceKey, shuffled)
+        }
+    }
+
+    /**
+     * Ponto de entrada único pros botões "Aleatório"/"Aleatório: tudo" da
+     * Biblioteca (Músicas, Favoritas, artista, álbum, pasta, playlist) —
+     * toca a lista NA ORDEM ORIGINAL (pra fila mostrar a ordem "de
+     * verdade" de onde veio) com o aleatório de verdade já ligado, em vez
+     * de cada botão embaralhar a lista manualmente do seu próprio jeito.
+     */
+    fun requestPlayQueueShuffled(songs: List<Song>, sourceKey: String, sourceLabel: String) {
+        if (songs.isEmpty()) return
+        // Antes começava sempre no índice 0 (a primeira música da lista
+        // original) e só ligava o modo aleatório do player DEPOIS —
+        // resultado: a primeira faixa tocada nunca era aleatória de
+        // verdade, só as próximas. Sorteando o índice inicial aqui, a
+        // própria primeira música já sai aleatória.
+        val startIndex = songs.indices.random()
+        requestPlayQueue(songs, startIndex, sourceKey, sourceLabel, shuffled = true)
+    }
+
+    fun confirmPendingPlay() {
+        val request = _pendingPlayRequest.value ?: return
+        // Reseta shuffle/repeat do contexto anterior — o novo play() já
+        // começa "do zero", na ordem padrão de onde o usuário está agora
+        // (fica ligado nesse "do zero" só se o próprio pedido pendente
+        // pediu aleatório — ex: veio do botão "Aleatório").
+        controller?.repeatMode = Player.REPEAT_MODE_OFF
+        _uiState.value = _uiState.value.copy(repeatMode = Player.REPEAT_MODE_OFF)
+        playQueue(request.songs, request.startIndex, request.sourceKey, request.shuffled)
+        _pendingPlayRequest.value = null
+    }
+
+    fun cancelPendingPlay() {
+        _pendingPlayRequest.value = null
+    }
+
+    fun playNext(song: Song) {
+        val insertIndex = (controller?.currentMediaItemIndex ?: 0) + 1
+        controller?.addMediaItem(insertIndex, song.toMediaItem())
+        val newQueue = _uiState.value.queue.toMutableList().apply { add(insertIndex, song) }
+        _uiState.value = _uiState.value.copy(
+            queue = newQueue,
+            manuallyQueuedSongIds = _uiState.value.manuallyQueuedSongIds + song.id
+        )
+        persistQueueSnapshot()
+    }
+
+    fun addToQueueEnd(song: Song) {
+        controller?.addMediaItem(song.toMediaItem())
+        _uiState.value = _uiState.value.copy(
+            queue = _uiState.value.queue + song,
+            manuallyQueuedSongIds = _uiState.value.manuallyQueuedSongIds + song.id
+        )
+        persistQueueSnapshot()
+    }
+
+    /** Pula direto pra uma música específica da fila (tela "Fila"). */
+    fun skipToQueueItem(index: Int) {
+        controller?.seekTo(index, 0L)
+    }
+
+    /** Remove uma música da fila (não afeta o arquivo/banco, só a ordem de tocar). */
+    fun removeFromQueue(index: Int) {
+        controller?.removeMediaItem(index)
+        val newQueue = _uiState.value.queue.toMutableList().apply {
+            if (index in indices) removeAt(index)
+        }
+        val newCurrentIndex = controller?.currentMediaItemIndex ?: _uiState.value.currentIndex
+        _uiState.value = _uiState.value.copy(queue = newQueue, currentIndex = newCurrentIndex)
+        pruneManuallyQueuedIds()
+        persistQueueSnapshot()
+    }
+
+    /** Reordena a fila arrastando um item de uma posição pra outra (tela "Fila"). */
+    fun moveQueueItem(from: Int, to: Int) {
+        if (from == to) return
+        controller?.moveMediaItem(from, to)
+        val newQueue = _uiState.value.queue.toMutableList().apply {
+            if (from in indices) add(to.coerceIn(0, size - 1), removeAt(from))
+        }
+        val newCurrentIndex = controller?.currentMediaItemIndex ?: _uiState.value.currentIndex
+        _uiState.value = _uiState.value.copy(queue = newQueue, currentIndex = newCurrentIndex)
+        pruneManuallyQueuedIds()
+        persistQueueSnapshot()
+    }
+
+    fun togglePlayPause() {
+        val c = controller ?: return
+        if (c.isPlaying) {
+            c.pause()
+            _uiState.value = _uiState.value.copy(isPlaying = false)
+        } else {
+            c.play()
+            _uiState.value = _uiState.value.copy(isPlaying = true)
+        }
+    }
+
+    /**
+     * Diferente de pausar: para de vez, esvazia a fila e derruba a
+     * notificação/serviço em primeiro plano — como fechar o player.
+     * O miniplayer some sozinho depois (ele só aparece quando
+     * `currentSong != null`).
+     */
+    fun stop() {
+        controller?.stop()
+        controller?.clearMediaItems()
+        _uiState.value = _uiState.value.copy(
+            isPlaying = false,
+            currentSong = null,
+            currentIndex = -1,
+            queue = emptyList(),
+            manuallyQueuedSongIds = emptySet()
+        )
+        persistQueueSnapshot()
+    }
+
+    fun skipNext() = controller?.seekToNextMediaItem()
+    fun skipPrevious() = controller?.seekToPreviousMediaItem()
+    fun seekTo(positionMs: Long) = controller?.seekTo(positionMs)
+
+    /** Avança ou volta um intervalo (ex: -10000 = volta 10s), sem passar dos limites da música. */
+    fun seekBy(deltaMs: Long) {
+        val player = controller ?: return
+        val target = (player.currentPosition + deltaMs).coerceIn(0, player.duration.coerceAtLeast(0))
+        player.seekTo(target)
+    }
+
+    fun setShuffle(enabled: Boolean) {
+        // Não deixa ligar o shuffle enquanto "repetir uma música" está
+        // ativo — nesse modo só existe uma música na "rotação", então
+        // embaralhar não teria efeito nenhum e só confundiria.
+        if (enabled && controller?.repeatMode == Player.REPEAT_MODE_ONE) return
+        controller?.shuffleModeEnabled = enabled
+        _uiState.value = _uiState.value.copy(shuffleEnabled = enabled)
+    }
+
+    fun cycleRepeatMode() {
+        val next = when (controller?.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+        controller?.repeatMode = next
+        _uiState.value = _uiState.value.copy(repeatMode = next)
+
+        // Repetir só UMA música e embaralhar ao mesmo tempo não faz
+        // sentido (embaralhar o quê, se é sempre a mesma?) — desliga o
+        // shuffle automaticamente nesse caso específico. Repetir a fila
+        // TODA continua funcionando junto com o shuffle normalmente.
+        if (next == Player.REPEAT_MODE_ONE && controller?.shuffleModeEnabled == true) {
+            controller?.shuffleModeEnabled = false
+            _uiState.value = _uiState.value.copy(shuffleEnabled = false)
+        }
+    }
+
+    fun currentPositionMs(): Long = controller?.currentPosition ?: 0
+
+    // ---------- Fila persistente ----------
+
+    private fun startPeriodicPositionSave() {
+        scope.launch {
+            while (true) {
+                delay(5000)
+                if (_uiState.value.isPlaying) persistQueueSnapshot()
+            }
+        }
+    }
+
+    /** Força salvar o estado atual da fila imediatamente (chamado em onStop da Activity). */
+    fun persistNow() = persistQueueSnapshot()
+
+    private fun persistQueueSnapshot() {
+        val state = _uiState.value
+        if (state.queue.isEmpty()) return
+        scope.launch {
+            settings.saveQueueState(
+                songIds = state.queue.map { it.id },
+                currentIndex = state.currentIndex.coerceAtLeast(0),
+                positionMs = currentPositionMs()
+            )
+        }
+    }
+
+    // ---------- A-B Repeat ----------
+
+    /** Marca o ponto A na posição atual da música. */
+    fun setPointA() {
+        _uiState.value = _uiState.value.copy(pointA = currentPositionMs(), pointB = null)
+    }
+
+    /** Marca o ponto B na posição atual — a partir daqui o trecho A-B repete em loop. */
+    fun setPointB() {
+        val a = _uiState.value.pointA ?: return
+        val b = currentPositionMs()
+        if (b <= a) return // B precisa vir depois de A, senão ignora
+        _uiState.value = _uiState.value.copy(pointB = b)
+    }
+
+    fun clearABRepeat() {
+        _uiState.value = _uiState.value.copy(pointA = null, pointB = null)
+    }
+
+    /** Roda durante toda a vida do controller, verificando o A-B repeat e o ponto de fim do corte periodicamente. */
+    private fun startABRepeatMonitor() {
+        scope.launch {
+            while (true) {
+                delay(200)
+                val state = _uiState.value
+                val a = state.pointA
+                val b = state.pointB
+                if (a != null && b != null && currentPositionMs() >= b) {
+                    controller?.seekTo(a)
+                    continue
+                }
+                val trimEnd = state.currentSong?.trimEndMs ?: 0
+                if (trimEnd > 0 && currentPositionMs() >= trimEnd) {
+                    controller?.seekToNextMediaItem()
+                }
+            }
+        }
+    }
+
+    // ---------- Sleep timer ----------
+
+    fun startSleepTimer(minutes: Int) {
+        cancelSleepTimer()
+        val endAt = System.currentTimeMillis() + minutes * 60_000L
+        _uiState.value = _uiState.value.copy(sleepTimerEndAt = endAt)
+        sleepTimerJob = scope.launch {
+            while (true) {
+                val remaining = endAt - System.currentTimeMillis()
+                if (remaining <= 0) {
+                    controller?.pause()
+                    _uiState.value = _uiState.value.copy(sleepTimerEndAt = null, sleepTimerRemainingMs = 0)
+                    break
+                }
+                _uiState.value = _uiState.value.copy(sleepTimerRemainingMs = remaining)
+                delay(1000)
+            }
+        }
+    }
+
+    fun stopAtEndOfSong() {
+        cancelSleepTimer()
+        val targetIndex = controller?.currentMediaItemIndex
+        if (targetIndex == null) return
+        sleepTimerJob = scope.launch {
+            while (controller?.currentMediaItemIndex == targetIndex) {
+                delay(500)
+            }
+            controller?.pause()
+            _uiState.value = _uiState.value.copy(sleepTimerEndAt = null)
+        }
+        _uiState.value = _uiState.value.copy(sleepTimerEndAt = -1L)
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _uiState.value = _uiState.value.copy(sleepTimerEndAt = null, sleepTimerRemainingMs = 0)
+    }
+
+    fun release() {
+        cancelSleepTimer()
+        persistQueueSnapshot()
+        controller?.release()
+        controller = null
+    }
+
+    private fun Song.toMediaItem(): MediaItem =
+        MediaItem.Builder()
+            .setUri(path)
+            .setMediaId(id.toString())
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist(artist)
+                    .setAlbumTitle(album)
+                    .build()
+            )
+            .build()
+}
