@@ -679,6 +679,27 @@ fun LibraryScreen(
                         when (selectedTab) {
                             LibraryTab.SONGS -> {
                                 val allSongs by dao.getAllSongs().collectAsState(initial = emptyList())
+                                // Mesmo tratamento visual do botão de play do
+                                // mini player: brilho radial na cor de
+                                // destaque atrás do ícone, também tingido
+                                // nela — se destaca mais que o de aleatório
+                                // (que continua neutro/branco do lado).
+                                val accent = MaterialTheme.colorScheme.primary
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .background(
+                                                Brush.radialGradient(listOf(accent.copy(alpha = 0.4f), Color.Transparent))
+                                            )
+                                    )
+                                    IconButton(
+                                        onClick = { playerController.requestPlayQueue(allSongs, 0, "songs", "Músicas") },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Icons.Filled.PlayArrow, contentDescription = "Tocar tudo", tint = accent, modifier = Modifier.size(18.dp))
+                                    }
+                                }
                                 IconButton(onClick = { playerController.requestPlayQueueShuffled(allSongs, "songs", "Músicas") }, modifier = Modifier.size(32.dp)) {
                                     Icon(Icons.Filled.Shuffle, contentDescription = "Aleatório", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                                 }
@@ -689,6 +710,23 @@ fun LibraryScreen(
                             }
                             LibraryTab.FAVORITES -> {
                                 val allFavorites by dao.getFavorites().collectAsState(initial = emptyList())
+                                // Mesma ideia do botão de play da aba Músicas, ver comentário acima.
+                                val accent = MaterialTheme.colorScheme.primary
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .background(
+                                                Brush.radialGradient(listOf(accent.copy(alpha = 0.4f), Color.Transparent))
+                                            )
+                                    )
+                                    IconButton(
+                                        onClick = { playerController.requestPlayQueue(allFavorites, 0, "favorites", "Favoritas") },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Icons.Filled.PlayArrow, contentDescription = "Tocar tudo", tint = accent, modifier = Modifier.size(18.dp))
+                                    }
+                                }
                                 IconButton(onClick = { playerController.requestPlayQueueShuffled(allFavorites, "favorites", "Favoritas") }, modifier = Modifier.size(32.dp)) {
                                     Icon(Icons.Filled.Shuffle, contentDescription = "Aleatório", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                                 }
@@ -745,7 +783,13 @@ fun LibraryScreen(
                     }
                     SongList(
                         songs = sortedSongs,
-                        onSongClick = { onSongClick(sortedSongs, sortedSongs.indexOf(it), "songs"); onOpenNowPlaying() },
+                        // Antes tocava a lista INTEIRA a partir da música
+                        // clicada (com centenas de músicas às vezes) — a
+                        // fila em "Tocando agora" ficava enorme e difícil
+                        // de administrar. Agora clicar toca só aquela
+                        // música; se a pessoa quiser ouvir tudo, é só usar
+                        // o botão de play ou o de aleatório aqui do lado.
+                        onSongClick = { onSongClick(listOf(it), 0, "songs"); onOpenNowPlaying() },
                         onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
                         dao = dao,
                     onPlayNext = { playerController.playNext(it) },
@@ -760,7 +804,8 @@ fun LibraryScreen(
                     val songs by dao.getFavorites().collectAsState(initial = emptyList())
                     SongList(
                         songs = songs,
-                        onSongClick = { onSongClick(songs, songs.indexOf(it), "favorites"); onOpenNowPlaying() },
+                        // Mesma mudança da aba Músicas — ver comentário acima.
+                        onSongClick = { onSongClick(listOf(it), 0, "favorites"); onOpenNowPlaying() },
                         onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
                         dao = dao,
                     onPlayNext = { playerController.playNext(it) },
