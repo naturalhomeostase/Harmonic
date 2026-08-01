@@ -170,10 +170,28 @@ private val titleGradientShadow = Shadow(
  * original do tema/imagem). Fica bem mais parecido com a cor real do
  * fundo, mas ainda com uma ajudinha pra não ficar idêntica demais nos
  * casos mais extremos.
+ *
+ * Faltava um detalhe: CLARIDADE (HSL) não é a mesma coisa que BRILHO
+ * PERCEBIDO. O amarelo é o caso clássico — um amarelo puro tem claridade
+ * HSL de só 0.5 (parece "média"), mas o olho humano enxerga ele quase tão
+ * claro quanto branco (luminância percebida ~0.80, contra ~0.32 de um rosa
+ * na MESMA claridade HSL — é assim que o tema "Pôr do sol", amarelo pra
+ * rosa, escapava do ajuste acima E "vencia" a sombra por baixo: nem a cor
+ * nem a sombra seguravam um amarelo tão estourado). Por isso, depois do
+ * ajuste de claridade normal, ainda checamos a luminância percebida de
+ * verdade (a mesma fórmula usada em recomendações de contraste/WCAG) e
+ * escurecemos mais se precisar — só entra em ação nesses casos de hue
+ * "enganoso" (amarelo, verde-limão); a maioria das cores nem chega a
+ * precisar dessa segunda passada.
  */
+private fun perceivedLuminance(color: Color): Float =
+    0.2126f * color.red + 0.7152f * color.green + 0.0722f * color.blue
+
 private fun readableGradientTextColors(sourceColors: List<Color>, surfaceIsDark: Boolean): List<Color> {
     val bandLow = if (surfaceIsDark) 0.55f else 0.28f
     val bandHigh = if (surfaceIsDark) 0.75f else 0.45f
+    val maxLuminance = if (surfaceIsDark) 0.62f else 1f
+    val minLuminance = if (surfaceIsDark) 0f else 0.42f
 
     val hsls = sourceColors.map { color ->
         FloatArray(3).also { androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), it) }
@@ -189,7 +207,25 @@ private fun readableGradientTextColors(sourceColors: List<Color>, surfaceIsDark:
         val target = bandLow + step * rank
         hsl[1] = (hsl[1] * 1.25f).coerceAtMost(1f)
         hsl[2] = hsl[2] + (target - hsl[2]) * 0.35f
-        Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+        var result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+
+        // Segunda passada: só entra em ação quando a luminância PERCEBIDA
+        // ainda está fora da faixa segura mesmo depois do ajuste normal —
+        // é o caso de hues "enganosos" tipo amarelo/verde-limão (ver
+        // comentário da função). Poucos passos, cada um empurra a
+        // claridade HSL um pouco mais na direção certa.
+        var safety = 0
+        while (surfaceIsDark && perceivedLuminance(result) > maxLuminance && safety < 8) {
+            hsl[2] = (hsl[2] - 0.06f).coerceAtLeast(0.2f)
+            result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+            safety++
+        }
+        while (!surfaceIsDark && perceivedLuminance(result) < minLuminance && safety < 8) {
+            hsl[2] = (hsl[2] + 0.06f).coerceAtMost(0.8f)
+            result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
+            safety++
+        }
+        result
     }
 }
 
