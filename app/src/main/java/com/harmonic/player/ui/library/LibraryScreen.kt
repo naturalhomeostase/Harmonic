@@ -69,7 +69,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -130,10 +132,21 @@ private val playlistSortOptions = listOf(
 )
 
 /**
+ * Sombra difusa escura por trás dos títulos com gradiente — a mesma técnica
+ * já usada nas letras de música ([LyricsView]). Com ela cuidando do
+ * contraste, a cor do texto pode ficar bem mais fiel à cor real do
+ * tema/imagem em vez de precisar se afastar tanto pra ser legível sozinha.
+ */
+private val titleGradientShadow = Shadow(
+    color = Color.Black.copy(alpha = 0.6f),
+    offset = Offset(0f, 1f),
+    blurRadius = 6f
+)
+
+/**
  * Deriva as cores de TEXTO a partir das duas cores do FUNDO do tema/imagem
- * (mantém o matiz de cada uma, pra combinar) — mas a claridade de cada uma
- * fica dentro de uma FAIXA legível pra a superfície onde o texto realmente
- * é desenhado ([surfaceIsDark]), não solta que nem na cor de origem.
+ * (mantém o matiz de cada uma, pra combinar) — puxando a claridade só uma
+ * PARTE do caminho em direção a uma faixa legível, sem chegar lá de todo.
  *
  * Primeira versão jogava a claridade pro extremo OPOSTO ao da cor de
  * origem — só que o texto é desenhado em cima da SUPERFÍCIE do app
@@ -146,33 +159,36 @@ private val playlistSortOptions = listOf(
  * eram parecidas em tom (ex: os dois azuis do tema "Oceano"), o resultado
  * virava praticamente uma cor só, sem graça de gradiente nenhuma.
  *
- * Ajuste importante sobre CLARIDADE (lightness) em si: no modelo HSL,
- * quanto mais perto do branco (L alto) ou do preto (L baixo), mais
- * "lavada"/pastel uma cor parece — não importa a saturação. O ponto onde
- * uma cor fica mais VIVA de verdade é numa claridade média (nem perto do
- * branco nem do preto). A faixa abaixo mira nesse meio-termo — claridade
- * moderada (não mais perto do topo/base da escala), então as cores saem
- * saturadas e vivas de verdade, mantendo contraste suficiente com o fundo
- * escuro/claro do app (uma cor saturada em claridade média já contrasta
- * bem contra preto ou branco puro — não precisa chegar perto do extremo).
+ * Terceira versão trouxe a faixa pra uma claridade média (mais viva que
+ * perto do branco/preto), mas ainda um valor FIXO — o texto sempre saía
+ * bem diferente da cor de origem, perdendo a sensação de "combinar de
+ * verdade" com o tema.
+ *
+ * Agora, com [titleGradientShadow] cuidando do contraste por baixo, a cor
+ * não precisa mais garantir sozinha que vai ser legível — só PUXA 35% do
+ * caminho na direção da faixa legível (o resto continua fiel à claridade
+ * original do tema/imagem). Fica bem mais parecido com a cor real do
+ * fundo, mas ainda com uma ajudinha pra não ficar idêntica demais nos
+ * casos mais extremos.
  */
 private fun readableGradientTextColors(sourceColors: List<Color>, surfaceIsDark: Boolean): List<Color> {
-    val bandLow = if (surfaceIsDark) 0.52f else 0.30f
-    val bandHigh = if (surfaceIsDark) 0.70f else 0.46f
+    val bandLow = if (surfaceIsDark) 0.55f else 0.28f
+    val bandHigh = if (surfaceIsDark) 0.75f else 0.45f
 
     val hsls = sourceColors.map { color ->
         FloatArray(3).also { androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), it) }
     }
     // Ordena os índices da cor mais escura pra mais clara NA ORIGEM, pra
-    // decidir quem fica perto do bandLow e quem fica perto do bandHigh —
+    // decidir quem puxa mais pro bandLow e quem puxa mais pro bandHigh —
     // preserva qual das duas "puxava mais pro claro" no tema original.
     val order = hsls.indices.sortedBy { hsls[it][2] }
     val step = if (order.size > 1) (bandHigh - bandLow) / (order.size - 1) else 0f
 
     return hsls.mapIndexed { index, hsl ->
         val rank = order.indexOf(index)
-        hsl[1] = (hsl[1] * 1.4f).coerceAtMost(1f)
-        hsl[2] = bandLow + step * rank
+        val target = bandLow + step * rank
+        hsl[1] = (hsl[1] * 1.25f).coerceAtMost(1f)
+        hsl[2] = hsl[2] + (target - hsl[2]) * 0.35f
         Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
     }
 }
@@ -603,6 +619,7 @@ fun LibraryScreen(
                                         tab.label,
                                         style = androidx.compose.ui.text.TextStyle(
                                             brush = tabTitleBrush,
+                                            shadow = titleGradientShadow,
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.SemiBold
                                         )
@@ -679,29 +696,63 @@ fun LibraryScreen(
                         when (selectedTab) {
                             LibraryTab.SONGS -> {
                                 val allSongs by dao.getAllSongs().collectAsState(initial = emptyList())
-                                // Mesmo tratamento visual do botão de play do
-                                // mini player: brilho radial na cor de
-                                // destaque atrás do ícone, também tingido
-                                // nela — se destaca mais que o de aleatório
-                                // (que continua neutro/branco do lado).
+                                // "Ativo" = a fila tocando agora veio dessa
+                                // aba (tanto faz se foi o botão de play ou o
+                                // de aleatório que a colocou pra tocar — os
+                                // dois usam sourceKey "songs"). O brilho e a
+                                // cor de destaque só aparecem nesse caso;
+                                // parado/pausado ou tocando outra coisa, os
+                                // dois botões ficam neutros.
+                                val isThisSourceActive = playbackState.sourceKey == "songs"
+                                val isPlayingThis = isThisSourceActive && playbackState.isPlaying
+                                val isShufflingThis = isThisSourceActive && playbackState.shuffleEnabled
                                 val accent = MaterialTheme.colorScheme.primary
                                 Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(26.dp)
-                                            .background(
-                                                Brush.radialGradient(listOf(accent.copy(alpha = 0.4f), Color.Transparent))
-                                            )
-                                    )
+                                    if (isPlayingThis) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(26.dp)
+                                                .background(
+                                                    Brush.radialGradient(listOf(accent.copy(alpha = 0.4f), Color.Transparent))
+                                                )
+                                        )
+                                    }
                                     IconButton(
-                                        onClick = { playerController.requestPlayQueue(allSongs, 0, "songs", "Músicas") },
+                                        onClick = {
+                                            if (isThisSourceActive) {
+                                                playerController.togglePlayPause()
+                                            } else {
+                                                playerController.requestPlayQueue(allSongs, 0, "songs", "Músicas")
+                                            }
+                                        },
                                         modifier = Modifier.size(32.dp)
                                     ) {
-                                        Icon(Icons.Filled.PlayArrow, contentDescription = "Tocar tudo", tint = accent, modifier = Modifier.size(18.dp))
+                                        Icon(
+                                            if (isPlayingThis) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                            contentDescription = if (isPlayingThis) "Pausar" else "Tocar tudo",
+                                            tint = if (isPlayingThis) accent else Color.White.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                 }
-                                IconButton(onClick = { playerController.requestPlayQueueShuffled(allSongs, "songs", "Músicas") }, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Filled.Shuffle, contentDescription = "Aleatório", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp)) {
+                                    if (isShufflingThis) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(26.dp)
+                                                .background(
+                                                    Brush.radialGradient(listOf(accent.copy(alpha = 0.4f), Color.Transparent))
+                                                )
+                                        )
+                                    }
+                                    IconButton(onClick = { playerController.requestPlayQueueShuffled(allSongs, "songs", "Músicas") }, modifier = Modifier.size(32.dp)) {
+                                        Icon(
+                                            Icons.Filled.Shuffle,
+                                            contentDescription = "Aleatório",
+                                            tint = if (isShufflingThis) accent else Color.White.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                                 com.harmonic.player.ui.common.SortMenuButton(
                                     options = songSortOptions, selectedKey = sortKey, ascending = sortAscending,
@@ -710,25 +761,57 @@ fun LibraryScreen(
                             }
                             LibraryTab.FAVORITES -> {
                                 val allFavorites by dao.getFavorites().collectAsState(initial = emptyList())
-                                // Mesma ideia do botão de play da aba Músicas, ver comentário acima.
+                                // Mesma ideia da aba Músicas, ver comentário acima.
+                                val isThisSourceActive = playbackState.sourceKey == "favorites"
+                                val isPlayingThis = isThisSourceActive && playbackState.isPlaying
+                                val isShufflingThis = isThisSourceActive && playbackState.shuffleEnabled
                                 val accent = MaterialTheme.colorScheme.primary
                                 Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(26.dp)
-                                            .background(
-                                                Brush.radialGradient(listOf(accent.copy(alpha = 0.4f), Color.Transparent))
-                                            )
-                                    )
+                                    if (isPlayingThis) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(26.dp)
+                                                .background(
+                                                    Brush.radialGradient(listOf(accent.copy(alpha = 0.4f), Color.Transparent))
+                                                )
+                                        )
+                                    }
                                     IconButton(
-                                        onClick = { playerController.requestPlayQueue(allFavorites, 0, "favorites", "Favoritas") },
+                                        onClick = {
+                                            if (isThisSourceActive) {
+                                                playerController.togglePlayPause()
+                                            } else {
+                                                playerController.requestPlayQueue(allFavorites, 0, "favorites", "Favoritas")
+                                            }
+                                        },
                                         modifier = Modifier.size(32.dp)
                                     ) {
-                                        Icon(Icons.Filled.PlayArrow, contentDescription = "Tocar tudo", tint = accent, modifier = Modifier.size(18.dp))
+                                        Icon(
+                                            if (isPlayingThis) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                            contentDescription = if (isPlayingThis) "Pausar" else "Tocar tudo",
+                                            tint = if (isPlayingThis) accent else Color.White.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                 }
-                                IconButton(onClick = { playerController.requestPlayQueueShuffled(allFavorites, "favorites", "Favoritas") }, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Filled.Shuffle, contentDescription = "Aleatório", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp)) {
+                                    if (isShufflingThis) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(26.dp)
+                                                .background(
+                                                    Brush.radialGradient(listOf(accent.copy(alpha = 0.4f), Color.Transparent))
+                                                )
+                                        )
+                                    }
+                                    IconButton(onClick = { playerController.requestPlayQueueShuffled(allFavorites, "favorites", "Favoritas") }, modifier = Modifier.size(32.dp)) {
+                                        Icon(
+                                            Icons.Filled.Shuffle,
+                                            contentDescription = "Aleatório",
+                                            tint = if (isShufflingThis) accent else Color.White.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                             LibraryTab.ALBUMS -> {
@@ -1009,7 +1092,7 @@ fun LibraryScreen(
                                         if (albumRowBrush != null) {
                                             Text(
                                                 album.album, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                                style = LocalTextStyle.current.copy(brush = albumRowBrush)
+                                                style = LocalTextStyle.current.copy(brush = albumRowBrush, shadow = titleGradientShadow)
                                             )
                                         } else {
                                             Text(album.album, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
@@ -1739,7 +1822,7 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
                     if (groupTitleBrush != null) {
                         Text(
                             name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = LocalTextStyle.current.copy(brush = groupTitleBrush)
+                            style = LocalTextStyle.current.copy(brush = groupTitleBrush, shadow = titleGradientShadow)
                         )
                     } else {
                         Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1779,7 +1862,7 @@ private fun FolderList(folders: List<String>, onLongClick: (String) -> Unit = {}
                     if (folderTitleBrush != null) {
                         Text(
                             folderName, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = LocalTextStyle.current.copy(brush = folderTitleBrush)
+                            style = LocalTextStyle.current.copy(brush = folderTitleBrush, shadow = titleGradientShadow)
                         )
                     } else {
                         Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
@@ -1825,7 +1908,7 @@ private fun ArtistRow(artist: ArtistSummary, dao: SongDao, onLongClick: () -> Un
             if (titleBrush != null) {
                 Text(
                     artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = LocalTextStyle.current.copy(brush = titleBrush)
+                    style = LocalTextStyle.current.copy(brush = titleBrush, shadow = titleGradientShadow)
                 )
             } else {
                 Text(artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
@@ -1869,7 +1952,7 @@ private fun ArtistGridCell(artist: ArtistSummary, dao: SongDao, onLongClick: () 
                 artist.name,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium.copy(brush = artistTitleBrush)
+                style = MaterialTheme.typography.bodyMedium.copy(brush = artistTitleBrush, shadow = titleGradientShadow)
             )
         } else {
             Text(
@@ -1916,7 +1999,7 @@ private fun AlbumGridCell(album: AlbumSummary, dao: SongDao, onLongClick: () -> 
                 album.album,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium.copy(brush = albumTitleBrush)
+                style = MaterialTheme.typography.bodyMedium.copy(brush = albumTitleBrush, shadow = titleGradientShadow)
             )
         } else {
             Text(
@@ -2277,7 +2360,7 @@ private fun SongRow(
                     song.title,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = LocalTextStyle.current.copy(brush = titleBrush)
+                    style = LocalTextStyle.current.copy(brush = titleBrush, shadow = titleGradientShadow)
                 )
             } else {
                 Text(
