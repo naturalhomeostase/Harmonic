@@ -341,7 +341,13 @@ private fun HarmonicNavHost(
                 onOpenTheme = { navController.navigate("appearance") },
                 onOpenEqualizer = { navController.navigate("equalizer") },
                 onOpenHiddenFolders = { navController.navigate("hidden_folders") },
-                onOpenHiddenSongs = { navController.navigate("hidden_songs") }
+                onOpenHiddenSongs = { navController.navigate("hidden_songs") },
+                onOpenAbout = { navController.navigate("about") }
+            )
+        }
+        composable("about") {
+            com.harmonic.player.ui.settings.AboutScreen(
+                onBack = { navController.popBackStack() }
             )
         }
         composable("hidden_folders") {

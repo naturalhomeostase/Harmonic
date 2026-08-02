@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
@@ -43,7 +44,8 @@ fun SettingsScreen(
     onOpenTheme: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onOpenHiddenFolders: () -> Unit,
-    onOpenHiddenSongs: () -> Unit
+    onOpenHiddenSongs: () -> Unit,
+    onOpenAbout: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val albumGridView by settings.albumGridView.collectAsState(initial = false)
@@ -192,6 +194,13 @@ fun SettingsScreen(
                         android.widget.Toast.makeText(notifContext, "Já está desativada pra esse app", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
+            )
+
+            SettingsRow(
+                icon = Icons.Filled.Info,
+                title = "Sobre",
+                subtitle = "Versão, licenças, contato e privacidade",
+                onClick = onOpenAbout
             )
         }
         }

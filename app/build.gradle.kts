@@ -27,11 +27,20 @@ android {
     // GitHub Actions gerava sua própria chave de debug do zero, e o
     // Android bloqueia atualizar um app quando a assinatura muda.
     //
-    // ATENÇÃO: a chave de release aqui é só pra testes/instalação própria
-    // — funciona perfeitamente pra gerar APK/AAB e instalar no celular,
-    // mas antes de publicar de verdade na Play Store algum dia, gere uma
-    // chave de release privada de verdade e NÃO a commite no repositório
-    // (principalmente se ele for público).
+    // A senha do keystore de DEBUG ("android"/"androiddebugkey") é segura
+    // deixar assim — é a senha padrão e PÚBLICA que o próprio Android SDK
+    // usa em todo projeto novo, não é segredo de ninguém.
+    //
+    // Já a senha do keystore de RELEASE, o ideal é não deixar em texto
+    // puro aqui — mesmo em repositório privado, é boa prática não depender
+    // só da privacidade do repo (colaborador novo, repo virando público um
+    // dia, etc). Por isso ela agora pode vir de uma variável de ambiente
+    // (`RELEASE_STORE_PASSWORD` / `RELEASE_KEY_PASSWORD`, configuráveis
+    // como "Secret" nas configurações do GitHub). O valor fixo continua
+    // aqui só como ÚLTIMO recurso — pra não quebrar o build de UM MOMENTO
+    // PRO OUTRO antes de você configurar os secrets — mas assim que
+    // configurar, pode (e deveria) apagar essa linha do texto fixo e
+    // deixar só a variável de ambiente valendo.
     signingConfigs {
         getByName("debug") {
             storeFile = file("../keystore/debug.keystore")
@@ -41,9 +50,9 @@ android {
         }
         create("release") {
             storeFile = file("../keystore/release.keystore")
-            storePassword = "musicbox123"
+            storePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: "musicbox123"
             keyAlias = "musicbox"
-            keyPassword = "musicbox123"
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "musicbox123"
         }
     }
 
@@ -84,6 +93,8 @@ android {
 
     buildFeatures {
         compose = true
+        // Precisa disso pra acessar BuildConfig.VERSION_NAME (tela "Sobre")
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
