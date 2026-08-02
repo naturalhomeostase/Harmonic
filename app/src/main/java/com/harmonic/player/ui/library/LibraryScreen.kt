@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
@@ -69,7 +68,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
@@ -133,49 +132,20 @@ private val playlistSortOptions = listOf(
 )
 
 /**
- * Sombra difusa escura por trás dos títulos com gradiente — a mesma técnica
- * já usada nas letras de música ([LyricsView]). Com ela cuidando do
- * contraste, a cor do texto pode ficar bem mais fiel à cor real do
- * tema/imagem em vez de precisar se afastar tanto pra ser legível sozinha.
+ * Gradiente do título: cor pura do tema/imagem escolhido, sem nenhum
+ * ajuste de claridade, saturação ou sombra por trás. Toda tentativa
+ * anterior de "corrigir" a legibilidade sozinho (puxar a claridade pra
+ * uma faixa seura, escurecer em loop, sombra difusa) só deixava a cor
+ * mais opaca e ainda dava uma aparência de brilho/blur na fonte que não
+ * combinava com o resto do app (esse tipo de brilho é usado só em
+ * botões, não em texto). Já que o gradiente no título é uma OPÇÃO (não
+ * vem ligada por padrão) e a pessoa escolhe as próprias cores, não faz
+ * sentido o app tentar adivinhar/corrigir por ela — se uma combinação
+ * específica ficar difícil de ler, a solução é trocar a cor, não o app
+ * aplicar efeito nenhum em cima.
  */
-private val titleGradientShadow = Shadow(
-    color = Color.Black.copy(alpha = 0.85f),
-    offset = Offset(0f, 1f),
-    blurRadius = 14f
-)
+private fun readableGradientTextColors(sourceColors: List<Color>): List<Color> = sourceColors
 
-private fun perceivedLuminance(color: Color): Float =
-    0.2126f * color.red + 0.7152f * color.green + 0.0722f * color.blue
-
-/** remapeavam
- * a claridade de cada cor pra uma faixa "segura" (por rank, ou por delta de
- * luminância pro fundo real) e, quando isso não bastava sozinho, entravam
- * num segundo ajuste empurrando a claridade ainda mais, em loop. Empilhado,
- * esse ajuste progressivo é o que deixava a cor opaca/sem graça — cada vez
- * mais longe da cor vibrante do tema original — e em fundo escuro podia até
- * escurecer demais o texto, piorando a leitura em vez de ajudar.
- *
- * Agora quem garante contraste é a sombra escura embaixo do texto
- * ([titleGradientShadow], reforçada). A cor só precisa evitar os dois
- * extremos que se fundem com QUALQUER sombra/fundo — quase preta (some no
- * fundo escuro) ou quase branca (some perto do texto ao lado) — o resto
- * fica fiel à cor real do tema/gradiente escolhido. A direção do limite
- * (mais claro ou mais escuro permitido) ainda depende da luminância real do
- * fundo atrás do texto, não de uma suposição fixa de tema claro/escuro.
- */
-private fun readableGradientTextColors(sourceColors: List<Color>): List<Color> {
-    val backgroundIsDark = sourceColors.map { perceivedLuminance(it) }.average() < 0.5
-
-    val minLightness = if (backgroundIsDark) 0.4f else 0.26f
-    val maxLightness = if (backgroundIsDark) 0.9f else 0.62f
-
-    return sourceColors.map { color ->
-        val hsl = FloatArray(3).also { androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), it) }
-        hsl[1] = (hsl[1] * 1.15f).coerceAtMost(1f)
-        hsl[2] = hsl[2].coerceIn(minLightness, maxLightness)
-        Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
-    }
-}
 
 /**
  * Brush opcional pro título das músicas na lista, quando o usuário ativa
@@ -602,7 +572,6 @@ fun LibraryScreen(
                                         tab.label,
                                         style = androidx.compose.ui.text.TextStyle(
                                             brush = tabTitleBrush,
-                                            shadow = titleGradientShadow,
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.SemiBold
                                         )
@@ -1084,7 +1053,7 @@ fun LibraryScreen(
                                         if (albumRowBrush != null) {
                                             Text(
                                                 album.album, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                                style = LocalTextStyle.current.copy(brush = albumRowBrush, shadow = titleGradientShadow)
+                                                style = LocalTextStyle.current.copy(brush = albumRowBrush)
                                             )
                                         } else {
                                             Text(album.album, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
@@ -1844,7 +1813,7 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
                     if (groupTitleBrush != null) {
                         Text(
                             name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = LocalTextStyle.current.copy(brush = groupTitleBrush, shadow = titleGradientShadow)
+                            style = LocalTextStyle.current.copy(brush = groupTitleBrush)
                         )
                     } else {
                         Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1884,7 +1853,7 @@ private fun FolderList(folders: List<String>, onLongClick: (String) -> Unit = {}
                     if (folderTitleBrush != null) {
                         Text(
                             folderName, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = LocalTextStyle.current.copy(brush = folderTitleBrush, shadow = titleGradientShadow)
+                            style = LocalTextStyle.current.copy(brush = folderTitleBrush)
                         )
                     } else {
                         Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
@@ -1930,7 +1899,7 @@ private fun ArtistRow(artist: ArtistSummary, dao: SongDao, onLongClick: () -> Un
             if (titleBrush != null) {
                 Text(
                     artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = LocalTextStyle.current.copy(brush = titleBrush, shadow = titleGradientShadow)
+                    style = LocalTextStyle.current.copy(brush = titleBrush)
                 )
             } else {
                 Text(artist.name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White)
@@ -1974,7 +1943,7 @@ private fun ArtistGridCell(artist: ArtistSummary, dao: SongDao, onLongClick: () 
                 artist.name,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium.copy(brush = artistTitleBrush, shadow = titleGradientShadow)
+                style = MaterialTheme.typography.bodyMedium.copy(brush = artistTitleBrush)
             )
         } else {
             Text(
@@ -2021,7 +1990,7 @@ private fun AlbumGridCell(album: AlbumSummary, dao: SongDao, onLongClick: () -> 
                 album.album,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium.copy(brush = albumTitleBrush, shadow = titleGradientShadow)
+                style = MaterialTheme.typography.bodyMedium.copy(brush = albumTitleBrush)
             )
         } else {
             Text(
@@ -2382,7 +2351,7 @@ private fun SongRow(
                     song.title,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = LocalTextStyle.current.copy(brush = titleBrush, shadow = titleGradientShadow)
+                    style = LocalTextStyle.current.copy(brush = titleBrush)
                 )
             } else {
                 Text(
