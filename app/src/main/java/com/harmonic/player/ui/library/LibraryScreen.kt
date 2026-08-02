@@ -187,6 +187,7 @@ private val titleGradientShadow = Shadow(
 private fun perceivedLuminance(color: Color): Float =
     0.2126f * color.red + 0.7152f * color.green + 0.0722f * color.blue
 
+/**
  * Detalhe importante que só apareceu agora que o build voltou a compilar de
  * verdade: `surfaceIsDark` vinha da cor de fundo BASE do Material
  * (`MaterialTheme.colorScheme.background`), que é sempre preta/quase preta

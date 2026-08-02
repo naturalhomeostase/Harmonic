@@ -305,22 +305,40 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(24.dp))
 
-            Text(
-                state.currentSong?.title ?: "Nada tocando",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    // Mesmo truque da letra da música (LyricsView): em vez
-                    // de tentar adivinhar/trocar a cor quando ela fica
-                    // parecida com o fundo, uma sombra escura difusa por
-                    // trás cria contraste em qualquer combinação de cores,
-                    // sem precisar mudar a cor do tema.
-                    shadow = androidx.compose.ui.graphics.Shadow(
-                        color = Color.Black.copy(alpha = 0.75f),
-                        offset = androidx.compose.ui.geometry.Offset(0f, 1f),
-                        blurRadius = 10f
-                    )
-                ),
-                color = pageAccent
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    state.currentSong?.title ?: "Nada tocando",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        // Mesmo truque da letra da música (LyricsView): em vez
+                        // de tentar adivinhar/trocar a cor quando ela fica
+                        // parecida com o fundo, uma sombra escura difusa por
+                        // trás cria contraste em qualquer combinação de cores,
+                        // sem precisar mudar a cor do tema.
+                        shadow = androidx.compose.ui.graphics.Shadow(
+                            color = Color.Black.copy(alpha = 0.75f),
+                            offset = androidx.compose.ui.geometry.Offset(0f, 1f),
+                            blurRadius = 10f
+                        )
+                    ),
+                    color = pageAccent,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                state.currentSong?.let { song ->
+                    IconButton(onClick = { scope.launch { dao.setFavorite(song.id, !song.isFavorite) } }) {
+                        Icon(
+                            imageVector = if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = if (song.isFavorite) "Remover dos favoritos" else "Favoritar",
+                            tint = if (song.isFavorite) pageAccent else Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
             Text(
                 state.currentSong?.artist ?: "",
                 style = MaterialTheme.typography.bodyLarge,
