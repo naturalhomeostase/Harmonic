@@ -187,11 +187,28 @@ private val titleGradientShadow = Shadow(
 private fun perceivedLuminance(color: Color): Float =
     0.2126f * color.red + 0.7152f * color.green + 0.0722f * color.blue
 
-private fun readableGradientTextColors(sourceColors: List<Color>, surfaceIsDark: Boolean): List<Color> {
-    val bandLow = if (surfaceIsDark) 0.55f else 0.28f
-    val bandHigh = if (surfaceIsDark) 0.75f else 0.45f
-    val maxLuminance = if (surfaceIsDark) 0.62f else 1f
-    val minLuminance = if (surfaceIsDark) 0f else 0.42f
+ * Detalhe importante que só apareceu agora que o build voltou a compilar de
+ * verdade: `surfaceIsDark` vinha da cor de fundo BASE do Material
+ * (`MaterialTheme.colorScheme.background`), que é sempre preta/quase preta
+ * no tema escuro — só que o texto não é desenhado em cima dela, e sim do
+ * GRADIENTE DECORATIVO do tema (ex: o "Aurora", verde-água pra roxo — nada
+ * perto de preto). O texto estava calibrado pra contrastar contra um fundo
+ * escuro que nem é o que está atrás dele de verdade, daí ter saído apagado
+ * num tema colorido desses. Agora a claridade "clara ou escura" é decidida
+ * pela luminância MÉDIA das duas cores de fundo reais (as mesmas
+ * [sourceColors] que a função já recebe) — funciona em qualquer fundo,
+ * escuro, claro ou colorido no meio-termo.
+ */
+private fun readableGradientTextColors(sourceColors: List<Color>): List<Color> {
+    val backgroundLuminance = sourceColors.map { perceivedLuminance(it) }.average().toFloat()
+    val textShouldBeLight = backgroundLuminance < 0.5f
+    val bandLow = if (textShouldBeLight) 0.55f else 0.28f
+    val bandHigh = if (textShouldBeLight) 0.75f else 0.45f
+    // Diferença mínima de luminância percebida que o texto precisa manter
+    // em relação ao fundo real — não um teto/piso fixo como antes, já que
+    // "escuro o suficiente" ou "claro o suficiente" depende de contra o que
+    // está contrastando.
+    val minDelta = 0.32f
 
     val hsls = sourceColors.map { color ->
         FloatArray(3).also { androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), it) }
@@ -209,19 +226,21 @@ private fun readableGradientTextColors(sourceColors: List<Color>, surfaceIsDark:
         hsl[2] = hsl[2] + (target - hsl[2]) * 0.35f
         var result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
 
-        // Segunda passada: só entra em ação quando a luminância PERCEBIDA
-        // ainda está fora da faixa segura mesmo depois do ajuste normal —
-        // é o caso de hues "enganosos" tipo amarelo/verde-limão (ver
-        // comentário da função). Poucos passos, cada um empurra a
-        // claridade HSL um pouco mais na direção certa.
+        // Segunda passada: só entra em ação quando a diferença de
+        // luminância pro fundo real ainda está pequena demais mesmo depois
+        // do ajuste normal — é o caso de hues "enganosos" tipo
+        // amarelo/verde-limão (ver comentário de [perceivedLuminance]), ou
+        // fundos de meio-termo (nem claros nem escuros) como o Aurora.
+        // Poucos passos, cada um empurra a claridade HSL um pouco mais na
+        // direção certa.
         var safety = 0
-        while (surfaceIsDark && perceivedLuminance(result) > maxLuminance && safety < 8) {
-            hsl[2] = (hsl[2] - 0.06f).coerceAtLeast(0.2f)
+        while (textShouldBeLight && (perceivedLuminance(result) - backgroundLuminance) < minDelta && safety < 10) {
+            hsl[2] = (hsl[2] + 0.06f).coerceAtMost(0.92f)
             result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
             safety++
         }
-        while (!surfaceIsDark && perceivedLuminance(result) < minLuminance && safety < 8) {
-            hsl[2] = (hsl[2] + 0.06f).coerceAtMost(0.8f)
+        while (!textShouldBeLight && (backgroundLuminance - perceivedLuminance(result)) < minDelta && safety < 10) {
+            hsl[2] = (hsl[2] - 0.06f).coerceAtLeast(0.1f)
             result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
             safety++
         }
@@ -287,18 +306,17 @@ fun LibraryScreen(
         LibraryTab.values().filter { it == LibraryTab.SONGS || it.name !in hiddenTabNames }
     }
     val titleBrush = if (titleGradientEnabled) {
-        // A claridade do texto acompanha a superfície REAL onde ele é
-        // desenhado (clara/escura do tema atual), não a cor de origem do
-        // gradiente — ver o comentário em cima de readableGradientTextColors.
-        val surfaceIsDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        // A claridade do texto agora é decidida dentro de
+        // readableGradientTextColors, usando a luminância real das cores
+        // de fundo passadas — não precisa mais calcular isso aqui fora.
         if (titleGradientColorStart != null && titleGradientColorEnd != null) {
             // Cores escolhidas livremente pelo usuário na roda de cores.
             val source = listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!))
-            Brush.linearGradient(readableGradientTextColors(source, surfaceIsDark))
+            Brush.linearGradient(readableGradientTextColors(source))
         } else {
             val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.APP_ICON
             val source = theme.colorsArgb.map { Color(it) }
-            Brush.linearGradient(readableGradientTextColors(source, surfaceIsDark))
+            Brush.linearGradient(readableGradientTextColors(source))
         }
     } else null
 
