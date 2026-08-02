@@ -87,6 +87,7 @@ import com.harmonic.player.data.Song
 import com.harmonic.player.data.SongDao
 import com.harmonic.player.ui.common.ActionSheet
 import com.harmonic.player.playback.PlayerController
+import com.harmonic.player.playback.PlaybackUiState
 import com.harmonic.player.ui.miniplayer.MiniPlayer
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -138,114 +139,41 @@ private val playlistSortOptions = listOf(
  * tema/imagem em vez de precisar se afastar tanto pra ser legível sozinha.
  */
 private val titleGradientShadow = Shadow(
-    color = Color.Black.copy(alpha = 0.6f),
+    color = Color.Black.copy(alpha = 0.85f),
     offset = Offset(0f, 1f),
-    blurRadius = 6f
+    blurRadius = 14f
 )
 
-/**
- * Deriva as cores de TEXTO a partir das duas cores do FUNDO do tema/imagem
- * (mantém o matiz de cada uma, pra combinar) — puxando a claridade só uma
- * PARTE do caminho em direção a uma faixa legível, sem chegar lá de todo.
- *
- * Primeira versão jogava a claridade pro extremo OPOSTO ao da cor de
- * origem — só que o texto é desenhado em cima da SUPERFÍCIE do app
- * (escura, no tema escuro/AMOLED), não literalmente em cima daquele pixel
- * do gradiente decorativo lá no topo da tela. Cor de origem clara virava
- * texto escuro, que é quase invisível numa superfície já escura.
- *
- * Segunda versão corrigiu isso jogando as DUAS pontas pra uma claridade
- * FIXA idêntica — sempre legível, mas quando as duas cores de origem já
- * eram parecidas em tom (ex: os dois azuis do tema "Oceano"), o resultado
- * virava praticamente uma cor só, sem graça de gradiente nenhuma.
- *
- * Terceira versão trouxe a faixa pra uma claridade média (mais viva que
- * perto do branco/preto), mas ainda um valor FIXO — o texto sempre saía
- * bem diferente da cor de origem, perdendo a sensação de "combinar de
- * verdade" com o tema.
- *
- * Agora, com [titleGradientShadow] cuidando do contraste por baixo, a cor
- * não precisa mais garantir sozinha que vai ser legível — só PUXA 35% do
- * caminho na direção da faixa legível (o resto continua fiel à claridade
- * original do tema/imagem). Fica bem mais parecido com a cor real do
- * fundo, mas ainda com uma ajudinha pra não ficar idêntica demais nos
- * casos mais extremos.
- *
- * Faltava um detalhe: CLARIDADE (HSL) não é a mesma coisa que BRILHO
- * PERCEBIDO. O amarelo é o caso clássico — um amarelo puro tem claridade
- * HSL de só 0.5 (parece "média"), mas o olho humano enxerga ele quase tão
- * claro quanto branco (luminância percebida ~0.80, contra ~0.32 de um rosa
- * na MESMA claridade HSL — é assim que o tema "Pôr do sol", amarelo pra
- * rosa, escapava do ajuste acima E "vencia" a sombra por baixo: nem a cor
- * nem a sombra seguravam um amarelo tão estourado). Por isso, depois do
- * ajuste de claridade normal, ainda checamos a luminância percebida de
- * verdade (a mesma fórmula usada em recomendações de contraste/WCAG) e
- * escurecemos mais se precisar — só entra em ação nesses casos de hue
- * "enganoso" (amarelo, verde-limão); a maioria das cores nem chega a
- * precisar dessa segunda passada.
- */
 private fun perceivedLuminance(color: Color): Float =
     0.2126f * color.red + 0.7152f * color.green + 0.0722f * color.blue
 
-/**
- * Detalhe importante que só apareceu agora que o build voltou a compilar de
- * verdade: `surfaceIsDark` vinha da cor de fundo BASE do Material
- * (`MaterialTheme.colorScheme.background`), que é sempre preta/quase preta
- * no tema escuro — só que o texto não é desenhado em cima dela, e sim do
- * GRADIENTE DECORATIVO do tema (ex: o "Aurora", verde-água pra roxo — nada
- * perto de preto). O texto estava calibrado pra contrastar contra um fundo
- * escuro que nem é o que está atrás dele de verdade, daí ter saído apagado
- * num tema colorido desses. Agora a claridade "clara ou escura" é decidida
- * pela luminância MÉDIA das duas cores de fundo reais (as mesmas
- * [sourceColors] que a função já recebe) — funciona em qualquer fundo,
- * escuro, claro ou colorido no meio-termo.
+/** remapeavam
+ * a claridade de cada cor pra uma faixa "segura" (por rank, ou por delta de
+ * luminância pro fundo real) e, quando isso não bastava sozinho, entravam
+ * num segundo ajuste empurrando a claridade ainda mais, em loop. Empilhado,
+ * esse ajuste progressivo é o que deixava a cor opaca/sem graça — cada vez
+ * mais longe da cor vibrante do tema original — e em fundo escuro podia até
+ * escurecer demais o texto, piorando a leitura em vez de ajudar.
+ *
+ * Agora quem garante contraste é a sombra escura embaixo do texto
+ * ([titleGradientShadow], reforçada). A cor só precisa evitar os dois
+ * extremos que se fundem com QUALQUER sombra/fundo — quase preta (some no
+ * fundo escuro) ou quase branca (some perto do texto ao lado) — o resto
+ * fica fiel à cor real do tema/gradiente escolhido. A direção do limite
+ * (mais claro ou mais escuro permitido) ainda depende da luminância real do
+ * fundo atrás do texto, não de uma suposição fixa de tema claro/escuro.
  */
 private fun readableGradientTextColors(sourceColors: List<Color>): List<Color> {
-    val backgroundLuminance = sourceColors.map { perceivedLuminance(it) }.average().toFloat()
-    val textShouldBeLight = backgroundLuminance < 0.5f
-    val bandLow = if (textShouldBeLight) 0.55f else 0.28f
-    val bandHigh = if (textShouldBeLight) 0.75f else 0.45f
-    // Diferença mínima de luminância percebida que o texto precisa manter
-    // em relação ao fundo real — não um teto/piso fixo como antes, já que
-    // "escuro o suficiente" ou "claro o suficiente" depende de contra o que
-    // está contrastando.
-    val minDelta = 0.32f
+    val backgroundIsDark = sourceColors.map { perceivedLuminance(it) }.average() < 0.5
 
-    val hsls = sourceColors.map { color ->
-        FloatArray(3).also { androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), it) }
-    }
-    // Ordena os índices da cor mais escura pra mais clara NA ORIGEM, pra
-    // decidir quem puxa mais pro bandLow e quem puxa mais pro bandHigh —
-    // preserva qual das duas "puxava mais pro claro" no tema original.
-    val order = hsls.indices.sortedBy { hsls[it][2] }
-    val step = if (order.size > 1) (bandHigh - bandLow) / (order.size - 1) else 0f
+    val minLightness = if (backgroundIsDark) 0.4f else 0.26f
+    val maxLightness = if (backgroundIsDark) 0.9f else 0.62f
 
-    return hsls.mapIndexed { index, hsl ->
-        val rank = order.indexOf(index)
-        val target = bandLow + step * rank
-        hsl[1] = (hsl[1] * 1.25f).coerceAtMost(1f)
-        hsl[2] = hsl[2] + (target - hsl[2]) * 0.35f
-        var result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
-
-        // Segunda passada: só entra em ação quando a diferença de
-        // luminância pro fundo real ainda está pequena demais mesmo depois
-        // do ajuste normal — é o caso de hues "enganosos" tipo
-        // amarelo/verde-limão (ver comentário de [perceivedLuminance]), ou
-        // fundos de meio-termo (nem claros nem escuros) como o Aurora.
-        // Poucos passos, cada um empurra a claridade HSL um pouco mais na
-        // direção certa.
-        var safety = 0
-        while (textShouldBeLight && (perceivedLuminance(result) - backgroundLuminance) < minDelta && safety < 10) {
-            hsl[2] = (hsl[2] + 0.06f).coerceAtMost(0.92f)
-            result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
-            safety++
-        }
-        while (!textShouldBeLight && (backgroundLuminance - perceivedLuminance(result)) < minDelta && safety < 10) {
-            hsl[2] = (hsl[2] - 0.06f).coerceAtLeast(0.1f)
-            result = Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
-            safety++
-        }
-        result
+    return sourceColors.map { color ->
+        val hsl = FloatArray(3).also { androidx.core.graphics.ColorUtils.colorToHSL(color.toArgb(), it) }
+        hsl[1] = (hsl[1] * 1.15f).coerceAtMost(1f)
+        hsl[2] = hsl[2].coerceIn(minLightness, maxLightness)
+        Color(androidx.core.graphics.ColorUtils.HSLToColor(hsl))
     }
 }
 
@@ -758,7 +686,7 @@ fun LibraryScreen(
                                 // cor de destaque só aparecem nesse caso;
                                 // parado/pausado ou tocando outra coisa, os
                                 // dois botões ficam neutros.
-                                val isThisSourceActive = playbackState.sourceKey == "songs"
+                                val isThisSourceActive = isQueueFullyActive(playbackState, allSongs, "songs")
                                 val isPlayingThis = isThisSourceActive && playbackState.isPlaying
                                 val isShufflingThis = isThisSourceActive && playbackState.shuffleEnabled
                                 val accent = MaterialTheme.colorScheme.primary
@@ -817,7 +745,7 @@ fun LibraryScreen(
                             LibraryTab.FAVORITES -> {
                                 val allFavorites by dao.getFavorites().collectAsState(initial = emptyList())
                                 // Mesma ideia da aba Músicas, ver comentário acima.
-                                val isThisSourceActive = playbackState.sourceKey == "favorites"
+                                val isThisSourceActive = isQueueFullyActive(playbackState, allFavorites, "favorites")
                                 val isPlayingThis = isThisSourceActive && playbackState.isPlaying
                                 val isShufflingThis = isThisSourceActive && playbackState.shuffleEnabled
                                 val accent = MaterialTheme.colorScheme.primary
@@ -1018,11 +946,20 @@ fun LibraryScreen(
                         if (artistDetailSortAscending) base else base.reversed()
                     }
                     val isFavArtist = favoriteArtists.contains(artistName)
+                    val isArtistQueueActive = isQueueFullyActive(playbackState, songs, "artist:$artistName")
+                    val isPlayingArtist = isArtistQueueActive && playbackState.isPlaying
                     Column {
                         GroupHeader(
                             title = artistName,
                             onBack = { drilledGroup = null },
-                            onPlay = { playerController.requestPlayQueue(songs, 0, "artist:$artistName", artistName) },
+                            onPlay = {
+                                if (isArtistQueueActive) {
+                                    playerController.togglePlayPause()
+                                } else {
+                                    playerController.requestPlayQueue(songs, 0, "artist:$artistName", artistName)
+                                }
+                            },
+                            isPlayingThis = isPlayingArtist,
                             sortMenu = {
                                 com.harmonic.player.ui.common.SortMenuButton(
                                     options = songSortOptions, selectedKey = artistDetailSortKey, ascending = artistDetailSortAscending,
@@ -1195,12 +1132,21 @@ fun LibraryScreen(
                         if (albumDetailSortAscending) base else base.reversed()
                     }
                     val isFavAlbum = favoriteAlbumIds.contains(albumId)
+                    val isAlbumQueueActive = isQueueFullyActive(playbackState, songs, "album:$albumId")
+                    val isPlayingAlbum = isAlbumQueueActive && playbackState.isPlaying
                     Column {
                         GroupHeader(
                             title = albumName,
                             subtitle = drilledAlbumArtist,
                             onBack = { drilledGroup = null; drilledAlbumId = null },
-                            onPlay = { playerController.requestPlayQueue(songs, 0, "album:$albumId", albumName) },
+                            onPlay = {
+                                if (isAlbumQueueActive) {
+                                    playerController.togglePlayPause()
+                                } else {
+                                    playerController.requestPlayQueue(songs, 0, "album:$albumId", albumName)
+                                }
+                            },
+                            isPlayingThis = isPlayingAlbum,
                             sortMenu = {
                                 com.harmonic.player.ui.common.SortMenuButton(
                                     options = albumDetailSongSortOptions, selectedKey = albumDetailSortKey, ascending = albumDetailSortAscending,
@@ -1804,6 +1750,22 @@ fun LibraryScreen(
     }
 }
 
+/**
+ * Verifica se ESSA lista específica de músicas é literalmente a fila que
+ * está tocando agora — não só se o `sourceKey` bate. Antes só o sourceKey
+ * era checado, e como tocar uma música avulsa da lista de Músicas usa o
+ * mesmo sourceKey "songs" da lista inteira (idem "artist:X", "album:Y"),
+ * os botões "Tocar tudo"/play do cabeçalho achavam que a lista inteira já
+ * estava tocando (e só davam pause/resume) quando na verdade só uma
+ * música avulsa clicada na lista estava na fila — resultado: pausar essa
+ * música avulsa e tocar em "Tocar tudo" só retomava ela, em vez de tocar
+ * a lista inteira de verdade como devia.
+ */
+private fun isQueueFullyActive(state: PlaybackUiState, songs: List<Song>, sourceKey: String): Boolean =
+    state.sourceKey == sourceKey &&
+        state.queue.size == songs.size &&
+        state.queue.map { it.id }.toSet() == songs.map { it.id }.toSet()
+
 @Composable
 private fun GroupHeader(
     title: String,
@@ -1811,6 +1773,7 @@ private fun GroupHeader(
     subtitle: String? = null,
     menuItems: List<com.harmonic.player.ui.common.ActionSheetItem>? = null,
     onPlay: (() -> Unit)? = null,
+    isPlayingThis: Boolean = false,
     sortMenu: (@Composable () -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -1845,7 +1808,11 @@ private fun GroupHeader(
         // o artista/álbum inteiro.
         if (onPlay != null) {
             IconButton(onClick = onPlay) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = "Tocar", tint = Color.White)
+                Icon(
+                    if (isPlayingThis) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isPlayingThis) "Pausar" else "Tocar",
+                    tint = if (isPlayingThis) MaterialTheme.colorScheme.primary else Color.White
+                )
             }
         }
         sortMenu?.invoke()

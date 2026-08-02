@@ -330,7 +330,13 @@ fun NowPlayingScreen(
                     modifier = Modifier.weight(1f, fill = false)
                 )
                 state.currentSong?.let { song ->
-                    IconButton(onClick = { scope.launch { dao.setFavorite(song.id, !song.isFavorite) } }) {
+                    IconButton(onClick = {
+                        scope.launch {
+                            val newValue = !song.isFavorite
+                            dao.setFavorite(song.id, newValue)
+                            playerController.updateSongFavoriteInMemory(song.id, newValue)
+                        }
+                    }) {
                         Icon(
                             imageVector = if (song.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                             contentDescription = if (song.isFavorite) "Remover dos favoritos" else "Favoritar",

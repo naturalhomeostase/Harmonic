@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -17,8 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.harmonic.player.BuildConfig
+import com.harmonic.player.R
 
 /**
  * Tela "Sobre" — versão, licenças de código aberto, contato e política de
@@ -67,7 +68,12 @@ fun AboutScreen(onBack: () -> Unit) {
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_launcher_monochrome),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp)
+                )
             }
             Spacer(Modifier.height(12.dp))
             Text("Music Box", style = MaterialTheme.typography.titleLarge, color = Color.White)
@@ -124,13 +130,20 @@ fun AboutScreen(onBack: () -> Unit) {
                     "Coil" to "Apache License 2.0",
                     "Accompanist" to "Apache License 2.0"
                 )
-                libraries.forEach { (name, license) ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(name, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
-                        Text(license, color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    libraries.forEachIndexed { index, (name, license) ->
+                        // Antes era um Row com SpaceBetween e nenhuma das
+                        // duas Text tinha largura limitada — com o nome da
+                        // biblioteca mais comprido (ex: a lista "Jetpack
+                        // Compose, AndroidX, Media3, Room"), as duas
+                        // ocupavam mais espaço do que cabia na linha e
+                        // acabavam sobrepondo uma na outra. Empilhando o
+                        // nome em cima e a licença embaixo, cada Text tem a
+                        // largura toda pra si e quebra linha normalmente
+                        // quando precisa — nunca mais sobrepõe.
+                        Text(name, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+                        Text(license, color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
+                        if (index != libraries.lastIndex) Spacer(Modifier.height(10.dp))
                     }
                 }
             }

@@ -312,6 +312,27 @@ class PlayerController(
         controller?.seekTo(index, 0L)
     }
 
+    /**
+     * A fila e o `currentSong` guardam sua própria CÓPIA de cada [Song], não
+     * uma referência viva ao banco — por isso, quando o usuário favorita
+     * pela tela "Tocando agora", o banco atualiza mas essa cópia em memória
+     * não, e o coração continua mostrando o valor antigo até a fila ser
+     * recarregada do zero (ex: voltando pra lista). Chamado junto com
+     * `dao.setFavorite`, atualiza a cópia em memória na hora.
+     */
+    fun updateSongFavoriteInMemory(songId: Long, isFavorite: Boolean) {
+        val state = _uiState.value
+        val newQueue = state.queue.map { if (it.id == songId) it.copy(isFavorite = isFavorite) else it }
+        _uiState.value = state.copy(
+            queue = newQueue,
+            currentSong = if (state.currentSong?.id == songId) {
+                state.currentSong.copy(isFavorite = isFavorite)
+            } else {
+                state.currentSong
+            }
+        )
+    }
+
     /** Remove uma música da fila (não afeta o arquivo/banco, só a ordem de tocar). */
     fun removeFromQueue(index: Int) {
         controller?.removeMediaItem(index)
