@@ -9,7 +9,9 @@ data class WidgetPlaybackState(
     val title: String? = null,
     val artist: String? = null,
     val isPlaying: Boolean = false,
-    val hasQueue: Boolean = false
+    val hasQueue: Boolean = false,
+    val currentMediaId: Long? = null,
+    val coverBitmap: android.graphics.Bitmap? = null
 )
 
 /**
@@ -37,12 +39,26 @@ object PlaybackServiceHolder {
     fun refreshState() {
         val p = player ?: run { _state.value = WidgetPlaybackState(); return }
         val metadata = p.mediaMetadata
-        _state.value = WidgetPlaybackState(
+        val mediaId = p.currentMediaItem?.mediaId?.toLongOrNull()
+        // Só zera a capa quando a música REALMENTE mudou — sem isso, cada
+        // play/pause (que também chama refreshState) fazia a capa sumir e
+        // recarregar do zero, piscando à toa no widget.
+        val songChanged = mediaId != _state.value.currentMediaId
+        _state.value = _state.value.copy(
             title = metadata.title?.toString(),
             artist = metadata.artist?.toString(),
             isPlaying = p.isPlaying,
-            hasQueue = p.mediaItemCount > 0
+            hasQueue = p.mediaItemCount > 0,
+            currentMediaId = mediaId,
+            coverBitmap = if (songChanged) null else _state.value.coverBitmap
         )
+    }
+
+    /** Chamado pelo PlaybackService depois de carregar a capa em segundo plano — só aplica se a música ainda for a mesma. */
+    fun updateCover(mediaId: Long?, bitmap: android.graphics.Bitmap?) {
+        if (mediaId == _state.value.currentMediaId) {
+            _state.value = _state.value.copy(coverBitmap = bitmap)
+        }
     }
 
     fun togglePlayPause() {

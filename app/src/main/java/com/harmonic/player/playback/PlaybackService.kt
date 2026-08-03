@@ -188,15 +188,38 @@ class PlaybackService : MediaSessionService() {
     }
 
     /**
-     * Atualiza o estado que o widget lê e dispara o redesenho dele. Rodar
-     * isso a cada mudança de faixa/play-pause é barato — o Glance só
+     * Atualiza o estado que os widgets leem e dispara o redesenho deles.
+     * Rodar isso a cada mudança de faixa/play-pause é barato — o Glance só
      * recompõe de fato quando algo no estado realmente muda.
+     *
+     * A capa é buscada à parte, em segundo plano: é a parte "cara" (pode
+     * envolver ler o arquivo de áudio ou até baixar da internet), então os
+     * widgets já atualizam texto/ícone de play na hora, e a capa aparece
+     * assim que estiver pronta — sem travar a resposta do botão.
      */
     private fun updateWidget() {
         PlaybackServiceHolder.refreshState()
-        serviceScope.launch {
-            com.harmonic.player.widget.HarmonicWidget().updateAll(applicationContext)
+        val mediaId = PlaybackServiceHolder.state.value.currentMediaId
+        serviceScope.launch { updateAllWidgets() }
+
+        if (mediaId != null && PlaybackServiceHolder.state.value.coverBitmap == null) {
+            serviceScope.launch(Dispatchers.IO) {
+                val dao = (applicationContext as HarmonicApp).database.songDao()
+                val song = dao.getSongsByIds(listOf(mediaId)).firstOrNull()
+                // Tamanho pequeno (300px) — a capa no widget nunca aparece
+                // maior que uma tela cheia pequena, e um bitmap menor custa
+                // bem menos memória/bateria pra decodificar e desenhar.
+                val bitmap = song?.let { com.harmonic.player.data.AlbumArtLoader.load(applicationContext, it, sizePx = 300) }
+                PlaybackServiceHolder.updateCover(mediaId, bitmap)
+                updateAllWidgets()
+            }
         }
+    }
+
+    private suspend fun updateAllWidgets() {
+        com.harmonic.player.widget.HarmonicWidgetSmall().updateAll(applicationContext)
+        com.harmonic.player.widget.HarmonicWidgetMedium().updateAll(applicationContext)
+        com.harmonic.player.widget.HarmonicWidgetLarge().updateAll(applicationContext)
     }
 }
 

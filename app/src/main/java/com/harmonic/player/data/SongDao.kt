@@ -46,7 +46,7 @@ interface SongDao {
     fun getSongsByArtist(artist: String): Flow<List<Song>>
 
     @Query("""
-        SELECT album, albumId, artist, COUNT(*) AS trackCount, SUM(playCount) AS playCount, MIN(id) AS representativeSongId
+        SELECT album, albumId, artist, COUNT(*) AS trackCount, SUM(playCount) AS playCount, MIN(id) AS representativeSongId, MAX(year) AS year
         FROM songs
         WHERE folder NOT IN (SELECT path FROM hidden_folders) AND isHidden = 0
         GROUP BY albumId
@@ -246,6 +246,6 @@ interface SongDao {
     suspend fun deleteBookmark(bookmarkId: Long)
 }
 
-data class AlbumSummary(val album: String, val albumId: Long, val artist: String, val trackCount: Int, val playCount: Int, val representativeSongId: Long)
+data class AlbumSummary(val album: String, val albumId: Long, val artist: String, val trackCount: Int, val playCount: Int, val representativeSongId: Long, val year: Int? = null)
 
 data class ArtistSummary(val name: String, val songCount: Int, val albumCount: Int, val playCount: Int)

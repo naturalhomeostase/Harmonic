@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -43,6 +44,7 @@ import com.harmonic.player.playback.PlaybackUiState
 fun MiniPlayer(
     state: PlaybackUiState,
     onTogglePlayPause: () -> Unit,
+    onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
     onStop: () -> Unit,
     onOpenNowPlaying: () -> Unit
@@ -153,6 +155,18 @@ fun MiniPlayer(
                 )
                 IconButton(onClick = onStop, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.Stop, contentDescription = "Parar", tint = accent.copy(alpha = 0.9f))
+                }
+            }
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(
+                            Brush.radialGradient(listOf(accent.copy(alpha = 0.25f), Color.Transparent))
+                        )
+                )
+                IconButton(onClick = onSkipPrevious, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.SkipPrevious, contentDescription = "Anterior", tint = accent.copy(alpha = 0.9f))
                 }
             }
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {

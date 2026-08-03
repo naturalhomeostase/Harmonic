@@ -59,7 +59,9 @@ data class PendingPlayRequest(
     val startIndex: Int,
     val sourceKey: String,
     val sourceLabel: String,
-    val shuffled: Boolean = false
+    val shuffled: Boolean = false,
+    val singleSongContext: List<Song>? = null,
+    val singleSongContextIndex: Int = 0
 )
 
 /**
@@ -202,6 +204,13 @@ class PlayerController(
     }
 
     fun playQueue(songs: List<Song>, startIndex: Int, sourceKey: String = "default", shuffled: Boolean? = null) {
+        if (songs.size > 1) {
+            // Fila de verdade com mais de uma música — não precisa do
+            // contexto de navegação avulsa, e mantê-lo aqui poderia fazer
+            // Anterior/Próxima pularem pra uma lista errada mais tarde.
+            contextSongs = emptyList()
+            contextIndex = -1
+        }
         val items = songs.map { it.toMediaItem() }
         _uiState.value = _uiState.value.copy(
             queue = songs,
@@ -254,6 +263,31 @@ class PlayerController(
     }
 
     /**
+     * Mesma ideia de [requestPlayQueue], só que pra tocar UMA música avulsa
+     * (aba Músicas/Favoritas) guardando a lista de origem — assim Anterior/
+     * Próxima continuam funcionando mesmo quando o play precisou de
+     * confirmação (troca de contexto com aleatório/repetir ligado).
+     */
+    fun requestPlaySingleSongWithContext(contextList: List<Song>, index: Int, sourceKey: String, sourceLabel: String) {
+        val state = _uiState.value
+        val song = contextList.getOrNull(index) ?: return
+        val hasActiveModifiers = state.shuffleEnabled || state.repeatMode != Player.REPEAT_MODE_OFF
+        val isDifferentContext = state.sourceKey != null && state.sourceKey != sourceKey && state.queue.isNotEmpty()
+        if (hasActiveModifiers && isDifferentContext) {
+            _pendingPlayRequest.value = PendingPlayRequest(
+                songs = listOf(song),
+                startIndex = 0,
+                sourceKey = sourceKey,
+                sourceLabel = sourceLabel,
+                singleSongContext = contextList,
+                singleSongContextIndex = index
+            )
+        } else {
+            playSingleSongWithContext(contextList, index, sourceKey)
+        }
+    }
+
+    /**
      * Ponto de entrada único pros botões "Aleatório"/"Aleatório: tudo" da
      * Biblioteca (Músicas, Favoritas, artista, álbum, pasta, playlist) —
      * toca a lista NA ORDEM ORIGINAL (pra fila mostrar a ordem "de
@@ -280,6 +314,10 @@ class PlayerController(
         controller?.repeatMode = Player.REPEAT_MODE_OFF
         _uiState.value = _uiState.value.copy(repeatMode = Player.REPEAT_MODE_OFF)
         playQueue(request.songs, request.startIndex, request.sourceKey, request.shuffled)
+        if (request.singleSongContext != null) {
+            contextSongs = request.singleSongContext
+            contextIndex = request.singleSongContextIndex
+        }
         _pendingPlayRequest.value = null
     }
 
@@ -388,8 +426,44 @@ class PlayerController(
         persistQueueSnapshot()
     }
 
-    fun skipNext() = controller?.seekToNextMediaItem()
-    fun skipPrevious() = controller?.seekToPreviousMediaItem()
+    /**
+     * Anterior/Próxima não tinham pra onde ir quando a fila real do player
+     * tem só 1 música — que é EXATAMENTE o caso de tocar uma música avulsa
+     * da lista de Músicas/Favoritas (por escolha: só aquela música entra na
+     * fila, sem lotar de resto da lista sem pedir). [contextSongs] guarda a
+     * lista de onde essa música veio só pra navegação — não aparece na tela
+     * de fila, que continua mostrando só a música atual como já era.
+     */
+    private var contextSongs: List<Song> = emptyList()
+    private var contextIndex: Int = -1
+
+    /** Toca uma música avulsa mantendo a fila com só ela, mas guardando a lista de origem pra Anterior/Próxima funcionarem. */
+    fun playSingleSongWithContext(contextList: List<Song>, index: Int, sourceKey: String) {
+        contextSongs = contextList
+        contextIndex = index
+        val song = contextList.getOrNull(index) ?: return
+        playQueue(listOf(song), 0, sourceKey)
+    }
+
+    fun skipNext() {
+        val state = _uiState.value
+        if (state.queue.size == 1 && contextIndex in contextSongs.indices && contextIndex + 1 < contextSongs.size) {
+            contextIndex++
+            playQueue(listOf(contextSongs[contextIndex]), 0, state.sourceKey ?: "default")
+        } else {
+            controller?.seekToNextMediaItem()
+        }
+    }
+
+    fun skipPrevious() {
+        val state = _uiState.value
+        if (state.queue.size == 1 && contextIndex in contextSongs.indices && contextIndex - 1 >= 0) {
+            contextIndex--
+            playQueue(listOf(contextSongs[contextIndex]), 0, state.sourceKey ?: "default")
+        } else {
+            controller?.seekToPreviousMediaItem()
+        }
+    }
     fun seekTo(positionMs: Long) = controller?.seekTo(positionMs)
 
     /** Avança ou volta um intervalo (ex: -10000 = volta 10s), sem passar dos limites da música. */

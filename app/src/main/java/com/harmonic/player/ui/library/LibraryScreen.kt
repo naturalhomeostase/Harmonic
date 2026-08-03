@@ -101,20 +101,24 @@ private val songSortOptions = listOf(
     com.harmonic.player.ui.common.SortOption("artist", "Artista"),
     com.harmonic.player.ui.common.SortOption("duration", "Duração"),
     com.harmonic.player.ui.common.SortOption("dateAdded", "Data adicionada"),
-    com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas")
+    com.harmonic.player.ui.common.SortOption("year", "Ano"),
+    com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas"),
+    com.harmonic.player.ui.common.SortOption("lastPlayedAt", "Tocadas recentemente")
 )
 
 private val albumDetailSongSortOptions = listOf(
     com.harmonic.player.ui.common.SortOption("trackNumber", "Faixa"),
     com.harmonic.player.ui.common.SortOption("title", "Título"),
     com.harmonic.player.ui.common.SortOption("duration", "Duração"),
-    com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas")
+    com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas"),
+    com.harmonic.player.ui.common.SortOption("lastPlayedAt", "Tocadas recentemente")
 )
 
 private val albumSortOptions = listOf(
     com.harmonic.player.ui.common.SortOption("album", "Álbum"),
     com.harmonic.player.ui.common.SortOption("artist", "Artista"),
     com.harmonic.player.ui.common.SortOption("trackCount", "Nº de faixas"),
+    com.harmonic.player.ui.common.SortOption("year", "Ano"),
     com.harmonic.player.ui.common.SortOption("playCount", "Mais tocadas")
 )
 
@@ -233,6 +237,8 @@ fun LibraryScreen(
     var quickMenuFolder by remember { mutableStateOf<String?>(null) }
     var sortKey by remember { mutableStateOf("title") }
     var sortAscending by remember { mutableStateOf(true) }
+    var favoritesSortKey by remember { mutableStateOf("title") }
+    var favoritesSortAscending by remember { mutableStateOf(true) }
     var albumSortKey by remember { mutableStateOf("album") }
     var albumSortAscending by remember { mutableStateOf(true) }
     var artistSortKey by remember { mutableStateOf("name") }
@@ -377,6 +383,7 @@ fun LibraryScreen(
             MiniPlayer(
                 state = playbackState,
                 onTogglePlayPause = { playerController.togglePlayPause() },
+                onSkipPrevious = { playerController.skipPrevious() },
                 onSkipNext = { playerController.skipNext() },
                 onStop = { playerController.stop() },
                 onOpenNowPlaying = onOpenNowPlaying
@@ -765,6 +772,10 @@ fun LibraryScreen(
                                         )
                                     }
                                 }
+                                com.harmonic.player.ui.common.SortMenuButton(
+                                    options = songSortOptions, selectedKey = favoritesSortKey, ascending = favoritesSortAscending,
+                                    onSelect = { favoritesSortKey = it }, onToggleDirection = { favoritesSortAscending = !favoritesSortAscending }
+                                )
                             }
                             LibraryTab.ALBUMS -> {
                                 com.harmonic.player.ui.common.SortMenuButton(
@@ -811,7 +822,9 @@ fun LibraryScreen(
                             "artist" -> songs.sortedBy { it.artist.lowercase() }
                             "duration" -> songs.sortedBy { it.durationMs }
                             "dateAdded" -> songs.sortedBy { it.dateAdded }
+                            "year" -> songs.sortedBy { it.year ?: 0 }
                             "playCount" -> songs.sortedBy { it.playCount }
+                            "lastPlayedAt" -> songs.sortedBy { it.lastPlayedAt ?: 0L }
                             else -> songs.sortedBy { it.title.lowercase() }
                         }
                         if (sortAscending) base else base.reversed()
@@ -824,7 +837,13 @@ fun LibraryScreen(
                         // de administrar. Agora clicar toca só aquela
                         // música; se a pessoa quiser ouvir tudo, é só usar
                         // o botão de play ou o de aleatório aqui do lado.
-                        onSongClick = { onSongClick(listOf(it), 0, "songs"); onOpenNowPlaying() },
+                        // A lista completa ainda é passada como CONTEXTO
+                        // (não como fila) só pra Anterior/Próxima saberem
+                        // pra onde ir — a fila em si continua com 1 música.
+                        onSongClick = {
+                            playerController.requestPlaySingleSongWithContext(sortedSongs, sortedSongs.indexOf(it), "songs", "Músicas")
+                            onOpenNowPlaying()
+                        },
                         onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
                         dao = dao,
                     onPlayNext = { playerController.playNext(it) },
@@ -836,17 +855,33 @@ fun LibraryScreen(
                 }
 
                 selectedTab == LibraryTab.FAVORITES -> {
-                    val songs by dao.getFavorites().collectAsState(initial = emptyList())
+                    val favoritesRaw by dao.getFavorites().collectAsState(initial = emptyList())
+                    val songs = remember(favoritesRaw, favoritesSortKey, favoritesSortAscending) {
+                        val base = when (favoritesSortKey) {
+                            "artist" -> favoritesRaw.sortedBy { it.artist.lowercase() }
+                            "duration" -> favoritesRaw.sortedBy { it.durationMs }
+                            "dateAdded" -> favoritesRaw.sortedBy { it.dateAdded }
+                            "year" -> favoritesRaw.sortedBy { it.year ?: 0 }
+                            "playCount" -> favoritesRaw.sortedBy { it.playCount }
+                            "lastPlayedAt" -> favoritesRaw.sortedBy { it.lastPlayedAt ?: 0L }
+                            else -> favoritesRaw.sortedBy { it.title.lowercase() }
+                        }
+                        if (favoritesSortAscending) base else base.reversed()
+                    }
                     SongList(
                         songs = songs,
                         // Mesma mudança da aba Músicas — ver comentário acima.
-                        onSongClick = { onSongClick(listOf(it), 0, "favorites"); onOpenNowPlaying() },
+                        onSongClick = {
+                            playerController.requestPlaySingleSongWithContext(songs, songs.indexOf(it), "favorites", "Favoritas")
+                            onOpenNowPlaying()
+                        },
                         onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
                         dao = dao,
                     onPlayNext = { playerController.playNext(it) },
                     onAddToQueueEnd = { playerController.addToQueueEnd(it) },
                         currentPlayingSongId = playbackState.currentSong?.id,
-                        isPlaying = playbackState.isPlaying
+                        isPlaying = playbackState.isPlaying,
+                        sortSignature = "$favoritesSortKey:$favoritesSortAscending"
                     )
                 }
 
@@ -909,7 +944,9 @@ fun LibraryScreen(
                         val base = when (artistDetailSortKey) {
                             "duration" -> songsRaw.sortedBy { it.durationMs }
                             "dateAdded" -> songsRaw.sortedBy { it.dateAdded }
+                            "year" -> songsRaw.sortedBy { it.year ?: 0 }
                             "playCount" -> songsRaw.sortedBy { it.playCount }
+                            "lastPlayedAt" -> songsRaw.sortedBy { it.lastPlayedAt ?: 0L }
                             else -> songsRaw.sortedBy { it.title.lowercase() }
                         }
                         if (artistDetailSortAscending) base else base.reversed()
@@ -994,6 +1031,7 @@ fun LibraryScreen(
                         val base = when (albumSortKey) {
                             "artist" -> albumsRaw.sortedBy { it.artist.lowercase() }
                             "trackCount" -> albumsRaw.sortedBy { it.trackCount }
+                            "year" -> albumsRaw.sortedBy { it.year ?: 0 }
                             "playCount" -> albumsRaw.sortedBy { it.playCount }
                             else -> albumsRaw.sortedBy { it.album.lowercase() }
                         }
@@ -1096,6 +1134,7 @@ fun LibraryScreen(
                             "title" -> songsRaw.sortedBy { it.title.lowercase() }
                             "duration" -> songsRaw.sortedBy { it.durationMs }
                             "playCount" -> songsRaw.sortedBy { it.playCount }
+                            "lastPlayedAt" -> songsRaw.sortedBy { it.lastPlayedAt ?: 0L }
                             else -> songsRaw.sortedBy { it.trackNumber ?: Int.MAX_VALUE }
                         }
                         if (albumDetailSortAscending) base else base.reversed()
