@@ -1,6 +1,7 @@
 package com.harmonic.player.playback
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.media3.common.AudioAttributes
@@ -47,6 +48,7 @@ import kotlinx.coroutines.launch
 class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+    val mediaSessionPublic: MediaSession? get() = mediaSession
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var restoreJob: Job? = null
 
@@ -70,6 +72,14 @@ class PlaybackService : MediaSessionService() {
         // inicial controlar a reprodução e mostrar o que está tocando.
         PlaybackServiceHolder.attach(player)
 
+        val sessionCallback = PlaybackSessionCallback(this, serviceScope)
+        // Quando o coração é tocado dentro do app (não na notificação), o
+        // ícone da notificação precisa saber disso também — sem essa ponte,
+        // ele só atualizava ao trocar de música.
+        PlaybackServiceHolder.setFavoriteChangeListener { songId, isFavorite ->
+            sessionCallback.onExternalFavoriteChange(songId, isFavorite)
+        }
+
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 updateWidget()
@@ -84,6 +94,7 @@ class PlaybackService : MediaSessionService() {
             override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = updateWidget()
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 updateWidget()
+                sessionCallback.onSongChanged(mediaItem?.mediaId?.toLongOrNull())
                 PlaybackAudioSession.update(player.audioSessionId)
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -111,7 +122,7 @@ class PlaybackService : MediaSessionService() {
 
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivityIntent)
-            .setCallback(PlaybackSessionCallback())
+            .setCallback(sessionCallback)
             .build()
 
         // Sem isso, a notificação de reprodução usa um canal e um nome
@@ -178,6 +189,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         restoreJob?.cancel()
+        PlaybackServiceHolder.setFavoriteChangeListener(null)
         PlaybackServiceHolder.detach()
         mediaSession?.run {
             player.release()
@@ -228,21 +240,33 @@ class PlaybackService : MediaSessionService() {
  * no futuro (ex: onPlaybackResumption). Por enquanto usa o comportamento
  * padrão do Media3, que já cobre play/pause/próxima/anterior/seek/shuffle/repeat.
  *
- * Também adiciona um botão "Parar" (STOP) na notificação — diferente do
- * pause, ele encerra a reprodução de vez (limpa a fila), pra quem quer
- * fechar a música rapidinho sem precisar abrir o app.
+ * Também adiciona dois botões customizados na notificação:
+ *  - "Favoritar" — o coração reflete o estado real da música atual (e se
+ *    atualiza sozinho tanto ao trocar de música quanto quando o usuário
+ *    favorita pelo app com a notificação já aberta).
+ *  - "Parar" (STOP) — diferente do pause, encerra a reprodução de vez
+ *    (limpa a fila), pra quem quer fechar a música rapidinho sem precisar
+ *    abrir o app.
  */
 private const val ACTION_STOP = "com.harmonic.player.STOP"
+private const val ACTION_FAVORITE_TOGGLE = "com.harmonic.player.FAVORITE_TOGGLE"
 
-private class PlaybackSessionCallback : MediaSession.Callback {
+private class PlaybackSessionCallback(
+    private val context: Context,
+    private val scope: CoroutineScope
+) : MediaSession.Callback {
 
     private val stopSessionCommand = SessionCommand(ACTION_STOP, Bundle.EMPTY)
+    private val favoriteSessionCommand = SessionCommand(ACTION_FAVORITE_TOGGLE, Bundle.EMPTY)
 
     private val stopButton = CommandButton.Builder()
         .setDisplayName("Parar")
         .setSessionCommand(stopSessionCommand)
         .setIconResId(R.drawable.ic_stop)
         .build()
+
+    private var currentSongId: Long? = null
+    private var currentIsFavorite: Boolean = false
 
     override fun onConnect(
         session: MediaSession,
@@ -251,6 +275,7 @@ private class PlaybackSessionCallback : MediaSession.Callback {
         val availableCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
             .buildUpon()
             .add(stopSessionCommand)
+            .add(favoriteSessionCommand)
             .build()
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
             .setAvailableSessionCommands(availableCommands)
@@ -258,7 +283,7 @@ private class PlaybackSessionCallback : MediaSession.Callback {
     }
 
     override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
-        session.setCustomLayout(listOf(stopButton))
+        refreshCustomLayout(session)
     }
 
     override fun onCustomCommand(
@@ -267,10 +292,69 @@ private class PlaybackSessionCallback : MediaSession.Callback {
         customCommand: SessionCommand,
         args: Bundle
     ): ListenableFuture<SessionResult> {
-        if (customCommand.customAction == ACTION_STOP) {
-            session.player.stop()
-            session.player.clearMediaItems()
+        when (customCommand.customAction) {
+            ACTION_STOP -> {
+                session.player.stop()
+                session.player.clearMediaItems()
+            }
+            ACTION_FAVORITE_TOGGLE -> {
+                val songId = currentSongId
+                if (songId != null) {
+                    val newValue = !currentIsFavorite
+                    // Otimista: já reflete o novo estado no ícone na hora,
+                    // sem esperar a escrita no banco terminar — a notificação
+                    // fica travada só o tempo de um toggle de boolean.
+                    currentIsFavorite = newValue
+                    refreshCustomLayout(session)
+                    scope.launch(Dispatchers.IO) {
+                        val dao = (context.applicationContext as HarmonicApp).database.songDao()
+                        dao.setFavorite(songId, newValue)
+                    }
+                    PlaybackServiceHolder.notifyFavoriteChanged(songId, newValue)
+                }
+            }
         }
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
     }
+
+    /** Chamado pelo listener do player quando a faixa muda — busca o status de favorito da música nova. */
+    fun onSongChanged(songId: Long?) {
+        currentSongId = songId
+        if (songId == null) {
+            currentIsFavorite = false
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val dao = (context.applicationContext as HarmonicApp).database.songDao()
+            val isFavorite = dao.getSongsByIds(listOf(songId)).firstOrNull()?.isFavorite ?: false
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                // Confere se a música não mudou de novo enquanto a consulta
+                // rodava (troca rápida de faixas) antes de aplicar.
+                if (currentSongId == songId) {
+                    currentIsFavorite = isFavorite
+                    context.mediaSessionOrNull()?.let { refreshCustomLayout(it) }
+                }
+            }
+        }
+    }
+
+    /** Chamado quando o favorito muda por FORA da notificação (ex: coração na tela do app) — mantém o ícone sincronizado. */
+    fun onExternalFavoriteChange(songId: Long, isFavorite: Boolean) {
+        if (songId == currentSongId && isFavorite != currentIsFavorite) {
+            currentIsFavorite = isFavorite
+            context.mediaSessionOrNull()?.let { refreshCustomLayout(it) }
+        }
+    }
+
+    private fun refreshCustomLayout(session: MediaSession) {
+        val favoriteButton = CommandButton.Builder()
+            .setDisplayName(if (currentIsFavorite) "Remover dos favoritos" else "Favoritar")
+            .setSessionCommand(favoriteSessionCommand)
+            .setIconResId(if (currentIsFavorite) R.drawable.ic_favorite_filled else R.drawable.ic_favorite_border)
+            .build()
+        session.setCustomLayout(listOf(favoriteButton, stopButton))
+    }
 }
+
+/** [Context] aqui é sempre o próprio [PlaybackService] — pega a sessão dele de volta pra atualizar o layout fora do fluxo normal de callbacks. */
+private fun Context.mediaSessionOrNull(): MediaSession? = (this as? PlaybackService)?.mediaSessionPublic

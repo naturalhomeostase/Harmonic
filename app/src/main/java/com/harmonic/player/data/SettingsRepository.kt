@@ -77,6 +77,35 @@ class SettingsRepository(private val context: Context) {
         initialValue = runBlocking { context.dataStore.data.first() }
     )
 
+    /**
+     * Snapshot de TODAS as preferências salvas, de forma genérica — sem
+     * precisar listar cada chave uma por uma (e esquecer de atualizar essa
+     * lista toda vez que uma configuração nova for adicionada). Usado pelo
+     * backup; o nome de cada chave (`key.name`) é o que já aparece nas
+     * chaves como "crossfade_ms", "playback_speed" etc.
+     */
+    suspend fun exportRawPreferences(): Map<String, Any?> {
+        val prefs = context.dataStore.data.first()
+        return prefs.asMap().entries.associate { (key, value) -> key.name to value }
+    }
+
+    /** Restaura preferências exportadas por [exportRawPreferences] — recria a chave tipada certa a partir do tipo do valor. */
+    suspend fun importRawPreferences(values: Map<String, Any?>) {
+        context.dataStore.edit { prefs ->
+            values.forEach { (name, value) ->
+                when (value) {
+                    is Boolean -> prefs[booleanPreferencesKey(name)] = value
+                    is Int -> prefs[intPreferencesKey(name)] = value
+                    is Long -> prefs[longPreferencesKey(name)] = value
+                    is Float -> prefs[floatPreferencesKey(name)] = value
+                    is Double -> prefs[doublePreferencesKey(name)] = value
+                    is String -> prefs[stringPreferencesKey(name)] = value
+                    is Set<*> -> prefs[stringSetPreferencesKey(name)] = value.filterIsInstance<String>().toSet()
+                }
+            }
+        }
+    }
+
     init {
         // Migração única: quem já tinha o app instalado (com o ícone/tema
         // antigo) e nunca escolheu uma cor de destaque própria acabava com
@@ -146,6 +175,7 @@ class SettingsRepository(private val context: Context) {
         val IGNORED_FOLDERS = stringSetPreferencesKey("ignored_folders")
         val CROSSFADE_MS = intPreferencesKey("crossfade_ms")
         val REPLAY_GAIN_ENABLED = booleanPreferencesKey("replay_gain_enabled")
+        val PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
 
         // Equalizador
         val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
@@ -195,6 +225,7 @@ class SettingsRepository(private val context: Context) {
     val ignoredFolders: Flow<Set<String>> = data.map { it[Keys.IGNORED_FOLDERS] ?: emptySet() }
     val crossfadeMs: Flow<Int> = data.map { it[Keys.CROSSFADE_MS] ?: 0 }
     val replayGainEnabled: Flow<Boolean> = data.map { it[Keys.REPLAY_GAIN_ENABLED] ?: false }
+    val playbackSpeed: Flow<Float> = data.map { it[Keys.PLAYBACK_SPEED] ?: 1f }
 
     suspend fun setAccentColor(colorArgb: Int) {
         context.dataStore.edit { it[Keys.ACCENT_COLOR] = colorArgb; it[Keys.USE_ALBUM_ART_COLOR] = false }
@@ -309,6 +340,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setReplayGainEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.REPLAY_GAIN_ENABLED] = enabled }
+    }
+
+    suspend fun setPlaybackSpeed(speed: Float) {
+        context.dataStore.edit { it[Keys.PLAYBACK_SPEED] = speed }
     }
 
     // ---------- Equalizador ----------

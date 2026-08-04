@@ -27,6 +27,20 @@ object PlaybackServiceHolder {
     private val _state = MutableStateFlow(WidgetPlaybackState())
     val state: StateFlow<WidgetPlaybackState> = _state.asStateFlow()
 
+    // Ponte pro botão "Favoritar" da notificação: quando o coração é tocado
+    // NO APP (tela Tocando Agora, listas), o app avisa aqui — e o serviço
+    // (que "ouve" isso) atualiza o ícone da notificação na hora, sem
+    // precisar trocar de música pra sincronizar.
+    private var onFavoriteChangedExternally: ((songId: Long, isFavorite: Boolean) -> Unit)? = null
+
+    fun setFavoriteChangeListener(listener: ((Long, Boolean) -> Unit)?) {
+        onFavoriteChangedExternally = listener
+    }
+
+    fun notifyFavoriteChanged(songId: Long, isFavorite: Boolean) {
+        onFavoriteChangedExternally?.invoke(songId, isFavorite)
+    }
+
     fun attach(player: Player) {
         this.player = player
     }

@@ -108,10 +108,10 @@ interface SongDao {
     suspend fun updateSongPath(songId: Long, path: String)
 
     @Query("""
-        UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, trackNumber = :trackNumber
+        UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, trackNumber = :trackNumber, year = :year, composer = :composer
         WHERE id = :songId
     """)
-    suspend fun updateSongMetadata(songId: Long, title: String, artist: String, album: String, genre: String?, trackNumber: Int?)
+    suspend fun updateSongMetadata(songId: Long, title: String, artist: String, album: String, genre: String?, trackNumber: Int?, year: Int?, composer: String?)
 
     @Query("UPDATE songs SET customCoverUri = :uri WHERE id = :songId")
     suspend fun setCustomCover(songId: Long, uri: String?)
@@ -196,6 +196,9 @@ interface SongDao {
     @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
     fun getPlaylists(): Flow<List<Playlist>>
 
+    @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
+    suspend fun getPlaylistsOnce(): List<Playlist>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addToPlaylist(crossRef: PlaylistSongCrossRef)
 
@@ -206,6 +209,14 @@ interface SongDao {
         ORDER BY playlist_song_cross_ref.position ASC
     """)
     fun getPlaylistSongs(playlistId: Long): Flow<List<Song>>
+
+    @Query("""
+        SELECT songs.* FROM songs
+        INNER JOIN playlist_song_cross_ref ON songs.id = playlist_song_cross_ref.songId
+        WHERE playlist_song_cross_ref.playlistId = :playlistId
+        ORDER BY playlist_song_cross_ref.position ASC
+    """)
+    suspend fun getPlaylistSongsOnce(playlistId: Long): List<Song>
 
     @Query("DELETE FROM playlist_song_cross_ref WHERE playlistId = :playlistId AND songId = :songId")
     suspend fun removeFromPlaylist(playlistId: Long, songId: Long)

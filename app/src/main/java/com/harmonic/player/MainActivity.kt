@@ -337,12 +337,21 @@ private fun HarmonicNavHost(
             com.harmonic.player.ui.settings.SettingsScreen(
                 settings = app.settings,
                 musicRepository = app.musicRepository,
+                playerController = playerController,
+                dao = app.database.songDao(),
                 onBack = { navController.popBackStack() },
                 onOpenTheme = { navController.navigate("appearance") },
                 onOpenEqualizer = { navController.navigate("equalizer") },
                 onOpenHiddenFolders = { navController.navigate("hidden_folders") },
                 onOpenHiddenSongs = { navController.navigate("hidden_songs") },
-                onOpenAbout = { navController.navigate("about") }
+                onOpenAbout = { navController.navigate("about") },
+                onOpenMaintenance = { navController.navigate("library_maintenance") }
+            )
+        }
+        composable("library_maintenance") {
+            com.harmonic.player.ui.settings.LibraryMaintenanceScreen(
+                database = app.database,
+                onBack = { navController.popBackStack() }
             )
         }
         composable("about") {

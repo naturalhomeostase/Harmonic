@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 data class PlaybackUiState(
@@ -104,6 +105,11 @@ class PlayerController(
             resolveQueueFromControllerIfNeeded()
             startPeriodicPositionSave()
             startABRepeatMonitor()
+            startCrossfadeMonitor()
+            startReplayGainSettingMonitor()
+            scope.launch {
+                controller?.setPlaybackSpeed(settings.playbackSpeed.first())
+            }
             onConnected()
         }, MoreExecutors.directExecutor())
     }
@@ -194,6 +200,7 @@ class PlayerController(
             durationMs = controller?.duration?.coerceAtLeast(0) ?: 0
         )
         pruneManuallyQueuedIds()
+        refreshReplayGainForSong(song)
         // "Corte": se a música tem um ponto de início definido (menu
         // Cortar), pula direto pra lá em vez de tocar do começo de verdade.
         // Isso não recodifica o arquivo — só ajusta onde a reprodução
@@ -369,6 +376,7 @@ class PlayerController(
                 state.currentSong
             }
         )
+        PlaybackServiceHolder.notifyFavoriteChanged(songId, isFavorite)
     }
 
     /** Remove uma música da fila (não afeta o arquivo/banco, só a ordem de tocar). */
@@ -466,6 +474,11 @@ class PlayerController(
     }
     fun seekTo(positionMs: Long) = controller?.seekTo(positionMs)
 
+    /** ExoPlayer estica/comprime o tempo (Sonic) mantendo o tom original por padrão — não precisa de nada especial pra "sem alterar o tom". */
+    fun setPlaybackSpeed(speed: Float) {
+        controller?.setPlaybackSpeed(speed)
+    }
+
     /** Avança ou volta um intervalo (ex: -10000 = volta 10s), sem passar dos limites da música. */
     fun seekBy(deltaMs: Long) {
         val player = controller ?: return
@@ -548,6 +561,9 @@ class PlayerController(
         _uiState.value = _uiState.value.copy(pointA = null, pointB = null)
     }
 
+    /** Guarda o id da última música pra qual já registramos um "play" — evita contar de novo a cada 200ms enquanto ela ainda toca. */
+    private var lastRegisteredPlaySongId: Long? = null
+
     /** Roda durante toda a vida do controller, verificando o A-B repeat e o ponto de fim do corte periodicamente. */
     private fun startABRepeatMonitor() {
         scope.launch {
@@ -563,12 +579,110 @@ class PlayerController(
                 val trimEnd = state.currentSong?.trimEndMs ?: 0
                 if (trimEnd > 0 && currentPositionMs() >= trimEnd) {
                     controller?.seekToNextMediaItem()
+                    continue
                 }
+                applyCrossfadeVolume()
+                registerPlayIfEligible(state)
             }
         }
     }
 
-    // ---------- Sleep timer ----------
+    /**
+     * Conta como "play" pra estatísticas (Mais tocadas / Tocadas
+     * recentemente) quando a pessoa já ouviu metade da música ou 30s dela
+     * — o que vier primeiro. Evita contar cliques acidentais que são
+     * pulados logo em seguida, mas também não obriga tocar a música
+     * inteira (útil pra faixas bem longas).
+     */
+    private fun registerPlayIfEligible(state: PlaybackUiState) {
+        val song = state.currentSong ?: return
+        if (lastRegisteredPlaySongId == song.id) return
+        val duration = controller?.duration ?: return
+        if (duration <= 0 || duration == androidx.media3.common.C.TIME_UNSET) return
+        val threshold = minOf(duration / 2, 30_000L)
+        if (currentPositionMs() >= threshold) {
+            lastRegisteredPlaySongId = song.id
+            scope.launch { dao.registerPlay(song.id) }
+        }
+    }
+
+    // ---------- Crossfade ----------
+
+    private var crossfadeMsCached = 0
+
+    /**
+     * Crossfade "sequencial": o player só toca uma faixa de áudio por vez,
+     * então não dá pra sobrepor de verdade duas músicas tocando ao mesmo
+     * tempo (isso exigiria dois players rodando em paralelo). Em vez
+     * disso, o volume desce suavemente nos últimos X ms da música atual e
+     * sobe suavemente nos primeiros X ms da próxima — evita o corte seco
+     * entre faixas, que é o problema que a maioria das pessoas quer
+     * resolver ao pedir "crossfade" num tocador de música.
+     *
+     * Reaproveita o mesmo ciclo de 200ms do A-B repeat (startABRepeatMonitor)
+     * em vez de um timer próprio — importante pro consumo de bateria, já
+     * que esse ciclo já roda o tempo todo de qualquer forma.
+     */
+    private fun startCrossfadeMonitor() {
+        scope.launch {
+            settings.crossfadeMs.collect { crossfadeMsCached = it }
+        }
+    }
+
+    // ---------- Normalizar volume (ReplayGain) ----------
+
+    private var replayGainEnabledCached = false
+    private var replayGainFactor = 1f
+    private var replayGainJob: Job? = null
+
+    private fun startReplayGainSettingMonitor() {
+        scope.launch {
+            settings.replayGainEnabled.collect { enabled ->
+                replayGainEnabledCached = enabled
+                if (!enabled) replayGainFactor = 1f
+                else refreshReplayGainForSong(_uiState.value.currentSong)
+            }
+        }
+    }
+
+    private fun refreshReplayGainForSong(song: Song?) {
+        replayGainJob?.cancel()
+        replayGainFactor = 1f
+        if (!replayGainEnabledCached || song == null) return
+        val songAtRequestTime = song.id
+        replayGainJob = scope.launch {
+            val gain = ReplayGainVolume.readGainMultiplier(song.path) ?: 1f
+            // Confere se a música não mudou de novo enquanto o arquivo era
+            // lido (troca rápida de faixas) antes de aplicar o ganho.
+            if (_uiState.value.currentSong?.id == songAtRequestTime) {
+                replayGainFactor = gain
+            }
+        }
+    }
+
+    /** Aplica o volume final = fade do crossfade (se ligado) × ganho de normalização (se ligado) — os dois escrevem no mesmo Player.volume, então precisam ser combinados aqui, não em lugares separados. */
+    private fun applyCrossfadeVolume() {
+        val c = controller ?: return
+        val crossfadeMs = crossfadeMsCached
+        val crossfadeFactor = if (crossfadeMs <= 0) {
+            1f
+        } else {
+            val duration = c.duration
+            if (duration <= 0 || duration == androidx.media3.common.C.TIME_UNSET) {
+                1f
+            } else {
+                val position = c.currentPosition
+                val fadeInFactor = (position.toFloat() / crossfadeMs).coerceIn(0f, 1f)
+                val remaining = duration - position
+                val fadeOutFactor = if (c.hasNextMediaItem()) (remaining.toFloat() / crossfadeMs).coerceIn(0f, 1f) else 1f
+                minOf(fadeInFactor, fadeOutFactor)
+            }
+        }
+        val target = crossfadeFactor * replayGainFactor
+        if (c.volume != target) c.volume = target
+    }
+
+
 
     fun startSleepTimer(minutes: Int) {
         cancelSleepTimer()

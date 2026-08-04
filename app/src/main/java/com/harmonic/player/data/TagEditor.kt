@@ -21,7 +21,8 @@ object TagEditor {
         val album: String,
         val genre: String,
         val year: String,
-        val trackNumber: String
+        val trackNumber: String,
+        val composer: String = ""
     )
 
     /** Lê as tags atuais direto do arquivo (não do banco do app), pra pré-preencher o formulário de edição. */
@@ -35,7 +36,8 @@ object TagEditor {
                 album = tag?.getFirst(FieldKey.ALBUM).orEmpty(),
                 genre = tag?.getFirst(FieldKey.GENRE).orEmpty(),
                 year = tag?.getFirst(FieldKey.YEAR).orEmpty(),
-                trackNumber = tag?.getFirst(FieldKey.TRACK).orEmpty()
+                trackNumber = tag?.getFirst(FieldKey.TRACK).orEmpty(),
+                composer = tag?.getFirst(FieldKey.COMPOSER).orEmpty()
             )
         } catch (e: Exception) {
             null
@@ -65,6 +67,7 @@ object TagEditor {
             setSafe(FieldKey.GENRE, values.genre)
             setSafe(FieldKey.YEAR, values.year)
             setSafe(FieldKey.TRACK, values.trackNumber)
+            setSafe(FieldKey.COMPOSER, values.composer)
 
             audioFile.commit()
             true

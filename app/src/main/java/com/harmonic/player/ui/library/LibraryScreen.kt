@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -237,6 +238,9 @@ fun LibraryScreen(
     var quickMenuFolder by remember { mutableStateOf<String?>(null) }
     var sortKey by remember { mutableStateOf("title") }
     var sortAscending by remember { mutableStateOf(true) }
+    var minDurationFilterSec by remember { mutableStateOf(0) }
+    var maxDurationFilterSec by remember { mutableStateOf(0) } // 0 = sem limite máximo
+    var showDurationFilterDialog by remember { mutableStateOf(false) }
     var favoritesSortKey by remember { mutableStateOf("title") }
     var favoritesSortAscending by remember { mutableStateOf(true) }
     var albumSortKey by remember { mutableStateOf("album") }
@@ -717,6 +721,15 @@ fun LibraryScreen(
                                     options = songSortOptions, selectedKey = sortKey, ascending = sortAscending,
                                     onSelect = { sortKey = it }, onToggleDirection = { sortAscending = !sortAscending }
                                 )
+                                val durationFilterActive = minDurationFilterSec > 0 || maxDurationFilterSec > 0
+                                IconButton(onClick = { showDurationFilterDialog = true }, modifier = Modifier.size(32.dp)) {
+                                    Icon(
+                                        Icons.Filled.FilterAlt,
+                                        contentDescription = "Filtrar por duração",
+                                        tint = if (durationFilterActive) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                             LibraryTab.FAVORITES -> {
                                 val allFavorites by dao.getFavorites().collectAsState(initial = emptyList())
@@ -807,7 +820,7 @@ fun LibraryScreen(
                 searchQuery.isNotBlank() -> SongList(
                     songs = searchResults,
                     onSongClick = { onSongClick(searchResults, searchResults.indexOf(it), "search"); onOpenNowPlaying() },
-                    onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
+                    onFavoriteToggle = { song -> scope.launch { val newValue = !song.isFavorite; dao.setFavorite(song.id, newValue); playerController.updateSongFavoriteInMemory(song.id, newValue) } },
                     dao = dao,
                     onPlayNext = { playerController.playNext(it) },
                     onAddToQueueEnd = { playerController.addToQueueEnd(it) },
@@ -816,7 +829,18 @@ fun LibraryScreen(
                 )
 
                 selectedTab == LibraryTab.SONGS -> {
-                    val songs by dao.getAllSongs().collectAsState(initial = emptyList())
+                    val songsRaw by dao.getAllSongs().collectAsState(initial = emptyList())
+                    val songs = remember(songsRaw, minDurationFilterSec, maxDurationFilterSec) {
+                        if (minDurationFilterSec <= 0 && maxDurationFilterSec <= 0) {
+                            songsRaw
+                        } else {
+                            songsRaw.filter { song ->
+                                val sec = song.durationMs / 1000
+                                (minDurationFilterSec <= 0 || sec >= minDurationFilterSec) &&
+                                    (maxDurationFilterSec <= 0 || sec <= maxDurationFilterSec)
+                            }
+                        }
+                    }
                     val sortedSongs = remember(songs, sortKey, sortAscending) {
                         val base = when (sortKey) {
                             "artist" -> songs.sortedBy { it.artist.lowercase() }
@@ -844,7 +868,7 @@ fun LibraryScreen(
                             playerController.requestPlaySingleSongWithContext(sortedSongs, sortedSongs.indexOf(it), "songs", "Músicas")
                             onOpenNowPlaying()
                         },
-                        onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
+                        onFavoriteToggle = { song -> scope.launch { val newValue = !song.isFavorite; dao.setFavorite(song.id, newValue); playerController.updateSongFavoriteInMemory(song.id, newValue) } },
                         dao = dao,
                     onPlayNext = { playerController.playNext(it) },
                     onAddToQueueEnd = { playerController.addToQueueEnd(it) },
@@ -875,7 +899,7 @@ fun LibraryScreen(
                             playerController.requestPlaySingleSongWithContext(songs, songs.indexOf(it), "favorites", "Favoritas")
                             onOpenNowPlaying()
                         },
-                        onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
+                        onFavoriteToggle = { song -> scope.launch { val newValue = !song.isFavorite; dao.setFavorite(song.id, newValue); playerController.updateSongFavoriteInMemory(song.id, newValue) } },
                         dao = dao,
                     onPlayNext = { playerController.playNext(it) },
                     onAddToQueueEnd = { playerController.addToQueueEnd(it) },
@@ -1015,7 +1039,7 @@ fun LibraryScreen(
                         SongList(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it), "artist:$artistName"); onOpenNowPlaying() },
-                            onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
+                            onFavoriteToggle = { song -> scope.launch { val newValue = !song.isFavorite; dao.setFavorite(song.id, newValue); playerController.updateSongFavoriteInMemory(song.id, newValue) } },
                             dao = dao,
                     onPlayNext = { playerController.playNext(it) },
                     onAddToQueueEnd = { playerController.addToQueueEnd(it) },
@@ -1208,7 +1232,7 @@ fun LibraryScreen(
                         SongList(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it), "album:$albumId"); onOpenNowPlaying() },
-                            onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
+                            onFavoriteToggle = { song -> scope.launch { val newValue = !song.isFavorite; dao.setFavorite(song.id, newValue); playerController.updateSongFavoriteInMemory(song.id, newValue) } },
                             dao = dao,
                     onPlayNext = { playerController.playNext(it) },
                     onAddToQueueEnd = { playerController.addToQueueEnd(it) },
@@ -1229,7 +1253,7 @@ fun LibraryScreen(
                         SongList(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it), "genre:${drilledGroup ?: ""}"); onOpenNowPlaying() },
-                            onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
+                            onFavoriteToggle = { song -> scope.launch { val newValue = !song.isFavorite; dao.setFavorite(song.id, newValue); playerController.updateSongFavoriteInMemory(song.id, newValue) } },
                             dao = dao,
                     onPlayNext = { playerController.playNext(it) },
                     onAddToQueueEnd = { playerController.addToQueueEnd(it) },
@@ -1285,7 +1309,7 @@ fun LibraryScreen(
                         SongList(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it), "folder:$folder"); onOpenNowPlaying() },
-                            onFavoriteToggle = { song -> scope.launch { dao.setFavorite(song.id, !song.isFavorite) } },
+                            onFavoriteToggle = { song -> scope.launch { val newValue = !song.isFavorite; dao.setFavorite(song.id, newValue); playerController.updateSongFavoriteInMemory(song.id, newValue) } },
                             dao = dao,
                     onPlayNext = { playerController.playNext(it) },
                     onAddToQueueEnd = { playerController.addToQueueEnd(it) },
@@ -1756,6 +1780,56 @@ fun LibraryScreen(
             )
         )
     }
+
+    if (showDurationFilterDialog) {
+        var minInput by remember { mutableStateOf(if (minDurationFilterSec > 0) (minDurationFilterSec / 60).toString() else "") }
+        var maxInput by remember { mutableStateOf(if (maxDurationFilterSec > 0) (maxDurationFilterSec / 60).toString() else "") }
+        AlertDialog(
+            onDismissRequest = { showDurationFilterDialog = false },
+            title = { Text("Filtrar por duração") },
+            text = {
+                Column {
+                    Text(
+                        "Só mostra músicas dentro dessa faixa de duração (em minutos). Deixe em branco pra não limitar.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = minInput,
+                            onValueChange = { minInput = it.filter { c -> c.isDigit() } },
+                            label = { Text("Mín. (min)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        OutlinedTextField(
+                            value = maxInput,
+                            onValueChange = { maxInput = it.filter { c -> c.isDigit() } },
+                            label = { Text("Máx. (min)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    minDurationFilterSec = (minInput.toIntOrNull() ?: 0) * 60
+                    maxDurationFilterSec = (maxInput.toIntOrNull() ?: 0) * 60
+                    showDurationFilterDialog = false
+                }) { Text("Aplicar") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    minDurationFilterSec = 0
+                    maxDurationFilterSec = 0
+                    showDurationFilterDialog = false
+                }) { Text("Limpar filtro") }
+            }
+        )
+    }
 }
 
 /**
@@ -2146,7 +2220,7 @@ private fun SongList(
                     selectedIds = emptySet()
                 },
                 onFavorite = {
-                    scope.launch { selectedSongs.forEach { dao.setFavorite(it.id, true) } }
+                    scope.launch { selectedSongs.forEach { dao.setFavorite(it.id, true); playerController.updateSongFavoriteInMemory(it.id, true) } }
                     selectedIds = emptySet()
                 },
                 onAddToPlaylist = { showPlaylistPickerForSelection = true },
@@ -2799,6 +2873,7 @@ private fun SongOptionsSheet(
         var genre by remember { mutableStateOf(song.genre ?: "") }
         var year by remember { mutableStateOf(song.year?.toString() ?: "") }
         var track by remember { mutableStateOf(song.trackNumber?.toString() ?: "") }
+        var composer by remember { mutableStateOf(song.composer ?: "") }
         var lookingUpOnline by remember { mutableStateOf(false) }
         var onlineLookupMessage by remember { mutableStateOf<String?>(null) }
 
@@ -2811,6 +2886,7 @@ private fun SongOptionsSheet(
                 if (fileTags.genre.isNotBlank()) genre = fileTags.genre
                 if (fileTags.year.isNotBlank()) year = fileTags.year
                 if (fileTags.trackNumber.isNotBlank()) track = fileTags.trackNumber
+                if (fileTags.composer.isNotBlank()) composer = fileTags.composer
             }
             loading = false
         }
@@ -2848,6 +2924,8 @@ private fun SongOptionsSheet(
                                 modifier = Modifier.weight(1f)
                             )
                         }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(value = composer, onValueChange = { composer = it }, label = { Text("Compositor") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(10.dp))
                         // Busca álbum/ano/faixa/gênero automaticamente pelo
                         // título+artista já preenchidos — só uma SUGESTÃO,
@@ -2893,7 +2971,7 @@ private fun SongOptionsSheet(
                 TextButton(
                     enabled = !loading && title.isNotBlank(),
                     onClick = {
-                        val values = com.harmonic.player.data.TagEditor.TagValues(title, artist, album, genre, year, track)
+                        val values = com.harmonic.player.data.TagEditor.TagValues(title, artist, album, genre, year, track, composer)
                         // showEditTagsDialog/onDismiss só DEPOIS que saveTags
                         // termina — essa era a causa real de "salva, mas não
                         // aparece no app" (às vezes nem o Toast aparecia):
@@ -3109,7 +3187,8 @@ private suspend fun saveTagsToFileAndDb(
     if (ok) {
         dao.updateSongMetadata(
             song.id, values.title.trim(), values.artist.trim(), values.album.trim(),
-            values.genre.trim().ifBlank { null }, values.trackNumber.trim().toIntOrNull()
+            values.genre.trim().ifBlank { null }, values.trackNumber.trim().toIntOrNull(),
+            values.year.trim().toIntOrNull(), values.composer.trim().ifBlank { null }
         )
         // Avisa o MediaStore que esse arquivo mudou (a gente escreveu nele
         // direto pelo sistema de arquivos, então o MediaStore ainda não

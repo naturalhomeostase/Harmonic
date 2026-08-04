@@ -1,5 +1,7 @@
 package com.harmonic.player.ui.playlists
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +13,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
@@ -19,8 +22,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.Playlist
+import com.harmonic.player.data.PlaylistImportExport
+import com.harmonic.player.data.PlaylistSongCrossRef
 import com.harmonic.player.data.SongDao
 import com.harmonic.player.ui.common.ActionSheet
 import com.harmonic.player.ui.common.ActionSheetItem
@@ -59,6 +65,7 @@ fun PlaylistsScreen(
     onOpenNowPlaying: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val playlists by dao.getPlaylists().collectAsState(initial = emptyList())
     var showCreateDialog by remember { mutableStateOf(false) }
     // Qual playlist está com um diálogo de renomear/excluir aberto — o menu
@@ -69,6 +76,26 @@ fun PlaylistsScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var sortKey by remember { mutableStateOf("createdAt") }
     var sortAscending by remember { mutableStateOf(false) }
+    var showFabMenu by remember { mutableStateOf(false) }
+
+    // Importar cria a playlist na hora (usando o nome do próprio arquivo
+    // .m3u) e já entra com as músicas encontradas — sem precisar criar uma
+    // playlist vazia à mão primeiro pra depois importar dentro dela.
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val fileName = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Playlist importada"
+                val paths = PlaylistImportExport.parseM3U(context, uri)
+                val allSongs = dao.getAllSongs().first()
+                val matched = allSongs.filter { it.path in paths }
+                val newId = dao.insertPlaylist(Playlist(name = fileName))
+                matched.forEachIndexed { index, song ->
+                    dao.addToPlaylist(PlaylistSongCrossRef(newId, song.id, index))
+                }
+                onOpenPlaylist(newId)
+            }
+        }
+    }
 
     val sortedPlaylists = remember(playlists, sortKey, sortAscending) {
         // Favoritas sempre no topo, dentro do grupo aplica a ordenação escolhida.
@@ -112,8 +139,25 @@ fun PlaylistsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreateDialog = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "Nova playlist")
+            Box {
+                FloatingActionButton(onClick = { showFabMenu = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = "Nova playlist")
+                }
+                ActionSheet(
+                    expanded = showFabMenu,
+                    onDismiss = { showFabMenu = false },
+                    title = "Playlist",
+                    items = listOf(
+                        ActionSheetItem(Icons.Filled.Add, "Nova playlist") {
+                            showFabMenu = false
+                            showCreateDialog = true
+                        },
+                        ActionSheetItem(Icons.Filled.FileDownload, "Importar de M3U") {
+                            showFabMenu = false
+                            importLauncher.launch("audio/*")
+                        }
+                    )
+                )
             }
         }
     ) { padding ->

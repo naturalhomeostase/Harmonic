@@ -18,6 +18,10 @@ import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.MusicRepository
 import com.harmonic.player.data.SettingsRepository
+import com.harmonic.player.data.SongDao
+import com.harmonic.player.playback.PlayerController
 import com.harmonic.player.ui.library.LibraryTab
 import kotlinx.coroutines.launch
 
@@ -40,18 +46,34 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     settings: SettingsRepository,
     musicRepository: MusicRepository,
+    playerController: PlayerController,
+    dao: SongDao,
     onBack: () -> Unit,
     onOpenTheme: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onOpenHiddenFolders: () -> Unit,
     onOpenHiddenSongs: () -> Unit,
-    onOpenAbout: () -> Unit
+    onOpenAbout: () -> Unit,
+    onOpenMaintenance: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val albumGridView by settings.albumGridView.collectAsState(initial = false)
     val artistGridView by settings.artistGridView.collectAsState(initial = false)
     val hiddenTabs by settings.hiddenTabs.collectAsState(initial = emptySet())
     var showTabsDialog by remember { mutableStateOf(false) }
+    var showPlaybackDialog by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
+    var backupImportResult by remember { mutableStateOf<com.harmonic.player.data.BackupManager.ImportResult?>(null) }
+    val backupImportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                backupImportResult = com.harmonic.player.data.BackupManager.import(context, uri, dao, settings)
+            }
+        }
+    }
     var scanning by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -87,6 +109,13 @@ fun SettingsScreen(
                 title = "Equalizador",
                 subtitle = "Presets, bandas de frequência, bass boost, virtualizador e reverb",
                 onClick = onOpenEqualizer
+            )
+
+            SettingsRow(
+                icon = Icons.Filled.Speed,
+                title = "Reprodução",
+                subtitle = "Velocidade, crossfade entre músicas e normalizar volume",
+                onClick = { showPlaybackDialog = true }
             )
 
             SettingsRow(
@@ -197,6 +226,20 @@ fun SettingsScreen(
             )
 
             SettingsRow(
+                icon = Icons.Filled.ContentCopy,
+                title = "Duplicatas e arquivos quebrados",
+                subtitle = "Encontra músicas repetidas na biblioteca e arquivos que não existem mais",
+                onClick = onOpenMaintenance
+            )
+
+            SettingsRow(
+                icon = Icons.Filled.Backup,
+                title = "Backup",
+                subtitle = "Salvar ou restaurar configurações, playlists e favoritos",
+                onClick = { showBackupDialog = true }
+            )
+
+            SettingsRow(
                 icon = Icons.Filled.Info,
                 title = "Sobre",
                 subtitle = "Versão, licenças, contato e privacidade",
@@ -239,6 +282,153 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showTabsDialog = false }) { Text("Fechar") }
+            }
+        )
+    }
+
+    if (showPlaybackDialog) {
+        val playbackSpeed by settings.playbackSpeed.collectAsState(initial = 1f)
+        val crossfadeMs by settings.crossfadeMs.collectAsState(initial = 0)
+        val replayGainEnabled by settings.replayGainEnabled.collectAsState(initial = false)
+
+        AlertDialog(
+            onDismissRequest = { showPlaybackDialog = false },
+            title = { Text("Reprodução") },
+            text = {
+                Column {
+                    Text(
+                        "Velocidade: ${String.format("%.2fx", playbackSpeed)}",
+                        color = Color.White
+                    )
+                    Text(
+                        "O tom da música continua o mesmo em qualquer velocidade.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    Slider(
+                        value = playbackSpeed,
+                        onValueChange = { speed ->
+                            scope.launch { settings.setPlaybackSpeed(speed) }
+                            playerController.setPlaybackSpeed(speed)
+                        },
+                        valueRange = 0.5f..2f,
+                        steps = 29 // passos de 0.05x entre 0.5x e 2x
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Text(
+                        if (crossfadeMs <= 0) "Crossfade: desligado" else "Crossfade: ${String.format("%.1f", crossfadeMs / 1000f)}s",
+                        color = Color.White
+                    )
+                    Text(
+                        "O volume desce suavemente no fim de uma música e sobe no início da próxima, em vez do corte seco.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    Slider(
+                        value = crossfadeMs.toFloat(),
+                        onValueChange = { ms -> scope.launch { settings.setCrossfadeMs(ms.toInt()) } },
+                        valueRange = 0f..8000f,
+                        steps = 15 // passos de 500ms
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { scope.launch { settings.setReplayGainEnabled(!replayGainEnabled) } },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Normalizar volume", color = Color.White)
+                            Text(
+                                "Deixa músicas gravadas mais altas mais parecidas em volume com as outras. Só funciona em músicas que já trazem essa informação salva no arquivo (a maioria não traz).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+                        com.harmonic.player.ui.common.ThemedSwitch(
+                            checked = replayGainEnabled,
+                            onCheckedChange = { scope.launch { settings.setReplayGainEnabled(it) } }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPlaybackDialog = false }) { Text("Fechar") }
+            }
+        )
+    }
+
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackupDialog = false },
+            title = { Text("Backup") },
+            text = {
+                Column {
+                    Text(
+                        "Salva configurações, playlists e favoritos num arquivo .json. Ao restaurar, as músicas são reencontradas pelo caminho do arquivo — as que não existirem mais nesse aparelho são só ignoradas.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                scope.launch {
+                                    val uri = com.harmonic.player.data.BackupManager.export(context, dao, settings)
+                                    com.harmonic.player.data.BackupManager.share(context, uri)
+                                }
+                            }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Backup, contentDescription = null, tint = Color.White)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Criar e compartilhar backup", color = Color.White)
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { backupImportLauncher.launch("application/json") }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.FileDownload, contentDescription = null, tint = Color.White)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Restaurar de um backup", color = Color.White)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBackupDialog = false }) { Text("Fechar") }
+            }
+        )
+    }
+
+    backupImportResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { backupImportResult = null },
+            title = { Text("Backup restaurado") },
+            text = {
+                Column {
+                    Text("${result.favoritesRestored} favoritos e ${result.playlistsRestored} playlists restaurados.", color = Color.White)
+                    if (result.songsNotFound > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "${result.songsNotFound} música(s) do backup não foram encontradas nesse aparelho (movidas, apagadas, ou a pasta ainda não foi escaneada) e ficaram de fora.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { backupImportResult = null }) { Text("OK") }
             }
         )
     }

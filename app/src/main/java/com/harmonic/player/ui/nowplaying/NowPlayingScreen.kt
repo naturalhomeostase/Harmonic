@@ -32,6 +32,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.harmonic.player.data.AlbumArtLoader
@@ -61,6 +62,7 @@ fun NowPlayingScreen(
     var isUserSeeking by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
+    var showBookmarksDialog by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
     var selectedLyricIndex by remember { mutableStateOf<Int?>(null) }
     val coverDisplayMode by settings.coverDisplayMode.collectAsState(initial = "VINYL")
@@ -249,6 +251,27 @@ fun NowPlayingScreen(
                     IconButton(onClick = onOpenEqualizer) {
                         Icon(Icons.Filled.Equalizer, contentDescription = "Equalizador", tint = Color.White.copy(alpha = 0.85f))
                     }
+                    // A-B repeat: 1º toque marca o ponto A, 2º marca o B (e
+                    // já começa a repetir esse trecho), 3º desliga. Sem
+                    // ícone padrão do Material pra isso — um texto pequeno
+                    // "A-B" já deixa claro o que é, sem precisar de legenda.
+                    IconButton(onClick = {
+                        when {
+                            state.pointA == null -> playerController.setPointA()
+                            state.pointB == null -> playerController.setPointB()
+                            else -> playerController.clearABRepeat()
+                        }
+                    }) {
+                        Text(
+                            text = if (state.pointB != null) "AB" else if (state.pointA != null) "A…" else "A-B",
+                            color = if (state.pointA != null) pageAccent else Color.White.copy(alpha = 0.85f),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                    IconButton(onClick = { showBookmarksDialog = true }) {
+                        Icon(Icons.Filled.Bookmark, contentDescription = "Marcadores", tint = Color.White.copy(alpha = 0.85f))
+                    }
                     IconButton(onClick = { showQueueSheet = true }) {
                         Icon(Icons.Filled.QueueMusic, contentDescription = "Fila de reprodução", tint = Color.White.copy(alpha = 0.85f))
                     }
@@ -350,6 +373,13 @@ fun NowPlayingScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color.White.copy(alpha = 0.85f)
             )
+            state.currentSong?.composer?.takeIf { it.isNotBlank() }?.let { composer ->
+                Text(
+                    "Compositor: $composer",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
 
             // Info técnica: bitrate, formato, frequência, tamanho do arquivo
             state.currentSong?.let { song ->
@@ -492,6 +522,82 @@ fun NowPlayingScreen(
             onRemove = { index -> playerController.removeFromQueue(index) },
             onMove = { from, to -> playerController.moveQueueItem(from, to) }
         )
+    }
+
+    if (showBookmarksDialog) {
+        val currentSong = state.currentSong
+        if (currentSong == null) {
+            showBookmarksDialog = false
+        } else {
+            val bookmarks by dao.getBookmarksForSong(currentSong.id).collectAsState(initial = emptyList())
+            var newLabel by remember { mutableStateOf("") }
+
+            AlertDialog(
+                onDismissRequest = { showBookmarksDialog = false },
+                title = { Text("Marcadores") },
+                text = {
+                    Column {
+                        if (bookmarks.isEmpty()) {
+                            Text(
+                                "Nenhum marcador nessa música ainda.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                        } else {
+                            bookmarks.forEach { bookmark ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            playerController.seekTo(bookmark.positionMs)
+                                            showBookmarksDialog = false
+                                        }
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val totalSeconds = bookmark.positionMs / 1000
+                                    val timeLabel = "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+                                    Text(
+                                        if (bookmark.label.isBlank()) timeLabel else "${bookmark.label} — $timeLabel",
+                                        color = Color.White,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(onClick = { scope.launch { dao.deleteBookmark(bookmark.id) } }) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "Excluir marcador", tint = Color.White.copy(alpha = 0.6f))
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = newLabel,
+                            onValueChange = { newLabel = it },
+                            label = { Text("Nome do marcador (opcional)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            dao.insertBookmark(
+                                com.harmonic.player.data.Bookmark(
+                                    songId = currentSong.id,
+                                    positionMs = playerController.currentPositionMs(),
+                                    label = newLabel.trim()
+                                )
+                            )
+                            newLabel = ""
+                        }
+                    }) { Text("Marcar aqui") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBookmarksDialog = false }) { Text("Fechar") }
+                }
+            )
+        }
     }
 }
 
