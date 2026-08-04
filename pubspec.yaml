@@ -1,0 +1,106 @@
+name: notas_app
+description: App de notas offline, criptografado, com cadernos personalizáveis.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Editor de texto rico (negrito, itálico, sublinhado, cor de fonte, marca-texto)
+  flutter_quill: ^11.0.0
+  flutter_quill_extensions: ^11.0.0
+  flutter_colorpicker: ^1.1.0
+
+  # Preferências do app (tema claro/escuro/cor), não sensíveis
+  shared_preferences: ^2.3.2
+
+  # Exportar/compartilhar notas (texto e PDF)
+  share_plus: ^12.0.2
+  pdf: ^3.10.0
+  cross_file: ^0.3.4+2
+
+  # Armazenamento local criptografado
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  path_provider: ^2.1.3
+
+  # Criptografia (derivação de chave Argon2id + AES-GCM)
+  cryptography: ^2.7.0
+
+  # Guardar salt/verificador de senha e chaves sensíveis pequenas
+  flutter_secure_storage: ^9.2.2
+
+  # Biometria opcional para desbloqueio rápido
+  local_auth: ^2.3.0
+
+  # Fontes (inclui cursivas) para os títulos dos cadernos
+  google_fonts: ^6.2.1
+
+  # Escolher imagem da galeria para capa ou fundo de página
+  image_picker: ^1.1.2
+
+  # Backup/restauração: seletor nativo "Salvar como.../Abrir de..."
+  # (funciona com Google Drive, e qualquer outro app de armazenamento,
+  # sem precisar de login dentro do app)
+  #
+  # Travado em >=11.0.1 de propósito: a versão 11.0.0 tem um bug conhecido
+  # que quebra a compilação Android ("cannot find symbol: class
+  # FilePickerPlugin") em builds com certas versões do Android Gradle
+  # Plugin — corrigido só na 11.0.1.
+  # (https://github.com/miguelpruivo/flutter_file_picker/issues/1973)
+  file_picker: ">=11.0.1 <12.0.0"
+
+  # Abrir anexos de nota (PDF, documentos) com o app padrão do sistema,
+  # depois de decifrar pra um arquivo temporário.
+  open_file: ^3.5.10
+
+  # Utilidades
+  intl: ^0.20.2
+  uuid: ^4.4.0
+  provider: ^6.1.2
+
+  # Tela "Sobre": versão do app em runtime e abrir links (política de
+  # privacidade, suporte, Play Store, GitHub)
+  package_info_plus: ^8.1.2
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# path_provider_android 2.3.0+ passou a depender do pacote "jni", que exige
+# uma versão do Kotlin Gradle Plugin mais nova do que o projeto Android
+# gerado tem configurada, e quebra o build. Travando na última versão de
+# antes dessa mudança (2.2.23) até isso ser resolvido do lado do Flutter/
+# Kotlin do projeto.
+dependency_overrides:
+  path_provider_android: 2.2.23
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: false
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  # Ícone "monocromático": no Android 13+, se o usuário ativar "ícones com
+  # tema" (Material You), o sistema usa só essa silhueta e aplica a cor de
+  # destaque do papel de parede dele automaticamente.
+  adaptive_icon_monochrome: "assets/icon/app_icon_monochrome.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/covers/
+    - assets/papers/
+  # Se você enviar fontes .ttf próprias, declare aqui. Por padrão usamos google_fonts
+  # (baixa as fontes em runtime), então não é obrigatório declarar fonts locais.
