@@ -31,14 +31,23 @@ jobs:
         with:
           name: harmonic-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-      # NOVO — compila também a versão release em .apk e .aab (o .aab é o
-      # formato que a Play Store pede pra publicação; o .apk continua saindo
-      # normal, pra instalação direta/teste). Usa a keystore de release fixa
-      # já commitada em /keystore, então sai assinado sem precisar de nenhum
-      # secret extra no repositório.
+      # O keystore de release NÃO é mais commitado no repositório (ver
+      # .gitignore) — ele é reconstruído aqui em tempo de build a partir do
+      # secret RELEASE_KEYSTORE_BASE64. Sem isso, os passos de release
+      # abaixo falham ao tentar assinar (arquivo não existe).
+      - name: Reconstruir keystore de release
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > keystore/release.keystore
       - name: Compilar APK release
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --stacktrace
       - name: Compilar AAB release
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew bundleRelease --stacktrace
       - name: Enviar APK release como artefato
         uses: actions/upload-artifact@v4
