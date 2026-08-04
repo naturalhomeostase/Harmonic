@@ -345,7 +345,15 @@ private fun HarmonicNavHost(
                 onOpenHiddenFolders = { navController.navigate("hidden_folders") },
                 onOpenHiddenSongs = { navController.navigate("hidden_songs") },
                 onOpenAbout = { navController.navigate("about") },
-                onOpenMaintenance = { navController.navigate("library_maintenance") }
+                onOpenMaintenance = { navController.navigate("library_maintenance") },
+                onOpenHistory = { navController.navigate("history_stats") }
+            )
+        }
+        composable("history_stats") {
+            com.harmonic.player.ui.settings.HistoryStatsScreen(
+                database = app.database,
+                playerController = playerController,
+                onBack = { navController.popBackStack() }
             )
         }
         composable("library_maintenance") {

@@ -29,18 +29,22 @@ android {
     //
     // A senha do keystore de DEBUG ("android"/"androiddebugkey") é segura
     // deixar assim — é a senha padrão e PÚBLICA que o próprio Android SDK
-    // usa em todo projeto novo, não é segredo de ninguém.
+    // usa em todo projeto novo, não é segredo de ninguém. Por isso o
+    // debug.keystore continua commitado no repositório normalmente.
     //
-    // Já a senha do keystore de RELEASE, o ideal é não deixar em texto
-    // puro aqui — mesmo em repositório privado, é boa prática não depender
-    // só da privacidade do repo (colaborador novo, repo virando público um
-    // dia, etc). Por isso ela agora pode vir de uma variável de ambiente
-    // (`RELEASE_STORE_PASSWORD` / `RELEASE_KEY_PASSWORD`, configuráveis
-    // como "Secret" nas configurações do GitHub). O valor fixo continua
-    // aqui só como ÚLTIMO recurso — pra não quebrar o build de UM MOMENTO
-    // PRO OUTRO antes de você configurar os secrets — mas assim que
-    // configurar, pode (e deveria) apagar essa linha do texto fixo e
-    // deixar só a variável de ambiente valendo.
+    // Já o keystore de RELEASE não fica mais commitado (ver .gitignore) —
+    // ele é reconstruído em tempo de build a partir do secret
+    // `RELEASE_KEYSTORE_BASE64` do GitHub Actions (o workflow decodifica
+    // o base64 de volta pro arquivo "keystore/release.keystore" antes de
+    // rodar o Gradle). Localmente, você mantém sua própria cópia do
+    // arquivo na mesma pasta — ela nunca é enviada ao Git.
+    //
+    // Senha, alias e senha da chave também vêm só de variáveis de
+    // ambiente (`RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` /
+    // `RELEASE_KEY_PASSWORD`, configuradas como "Secret" nas configurações
+    // do GitHub). Sem esses secrets configurados, o build de release falha
+    // ao tentar assinar — de propósito, pra nunca builder silenciosamente
+    // com uma senha/alias placeholder.
     signingConfigs {
         getByName("debug") {
             storeFile = file("../keystore/debug.keystore")
@@ -50,9 +54,9 @@ android {
         }
         create("release") {
             storeFile = file("../keystore/release.keystore")
-            storePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: "musicbox123"
-            keyAlias = "musicbox"
-            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "musicbox123"
+            storePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: "DEFINA_O_SECRET_RELEASE_STORE_PASSWORD"
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "DEFINA_O_SECRET_RELEASE_KEY_ALIAS"
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: "DEFINA_O_SECRET_RELEASE_KEY_PASSWORD"
         }
     }
 

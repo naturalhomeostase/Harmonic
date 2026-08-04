@@ -11,20 +11,27 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.LibraryParams
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
+import com.google.common.collect.ImmutableList
 import androidx.glance.appwidget.updateAll
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import com.harmonic.player.HarmonicApp
 import com.harmonic.player.MainActivity
 import com.harmonic.player.R
+import com.harmonic.player.data.Song
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -45,9 +52,9 @@ import kotlinx.coroutines.launch
  * usuário reabrir o app depois de o sistema matar o processo, a música que
  * estava tocando continua exatamente de onde parou.
  */
-class PlaybackService : MediaSessionService() {
+class PlaybackService : MediaLibraryService() {
 
-    private var mediaSession: MediaSession? = null
+    private var mediaSession: MediaLibrarySession? = null
     val mediaSessionPublic: MediaSession? get() = mediaSession
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var restoreJob: Job? = null
@@ -120,9 +127,8 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        mediaSession = MediaSession.Builder(this, player)
+        mediaSession = MediaLibrarySession.Builder(this, player, sessionCallback)
             .setSessionActivity(sessionActivityIntent)
-            .setCallback(sessionCallback)
             .build()
 
         // Sem isso, a notificação de reprodução usa um canal e um nome
@@ -172,7 +178,7 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaSession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
@@ -236,25 +242,25 @@ class PlaybackService : MediaSessionService() {
 }
 
 /**
- * Callback da sessão — ponto de extensão para fila persistente customizada
- * no futuro (ex: onPlaybackResumption). Por enquanto usa o comportamento
- * padrão do Media3, que já cobre play/pause/próxima/anterior/seek/shuffle/repeat.
+ * Callback da sessão. Além de favoritar/parar (ver comentário mais abaixo),
+ * agora também implementa a NAVEGAÇÃO da biblioteca — é o que faz o
+ * Android Auto (e qualquer outro "media browser", como o Google Assistant)
+ * conseguir mostrar Músicas/Artistas/Álbuns/Playlists/Favoritas na tela do
+ * carro, em vez de só tocar/pausar o que já estava tocando no celular.
  *
- * Também adiciona dois botões customizados na notificação:
- *  - "Favoritar" — o coração reflete o estado real da música atual (e se
- *    atualiza sozinho tanto ao trocar de música quanto quando o usuário
- *    favorita pelo app com a notificação já aberta).
- *  - "Parar" (STOP) — diferente do pause, encerra a reprodução de vez
- *    (limpa a fila), pra quem quer fechar a música rapidinho sem precisar
- *    abrir o app.
+ * Os itens "pasta" (Músicas, um artista específico, etc) só têm id+título;
+ * os itens "música" já vêm com a URI real do arquivo — o Android Auto pode
+ * tocar direto o que a gente devolve aqui, sem precisar de mais nenhuma
+ * consulta depois de escolhido.
  */
 private const val ACTION_STOP = "com.harmonic.player.STOP"
 private const val ACTION_FAVORITE_TOGGLE = "com.harmonic.player.FAVORITE_TOGGLE"
+private const val LIBRARY_ROOT_ID = "root"
 
 private class PlaybackSessionCallback(
     private val context: Context,
     private val scope: CoroutineScope
-) : MediaSession.Callback {
+) : MediaLibrarySession.Callback {
 
     private val stopSessionCommand = SessionCommand(ACTION_STOP, Bundle.EMPTY)
     private val favoriteSessionCommand = SessionCommand(ACTION_FAVORITE_TOGGLE, Bundle.EMPTY)
@@ -354,6 +360,101 @@ private class PlaybackSessionCallback(
             .build()
         session.setCustomLayout(listOf(favoriteButton, stopButton))
     }
+
+    // ---------- Navegação da biblioteca (Android Auto etc.) ----------
+
+    override fun onGetLibraryRoot(
+        session: MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        params: LibraryParams?
+    ): ListenableFuture<LibraryResult<MediaItem>> =
+        Futures.immediateFuture(LibraryResult.ofItem(folderItem(LIBRARY_ROOT_ID, "Music Box"), params))
+
+    override fun onGetItem(
+        session: MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        mediaId: String
+    ): ListenableFuture<LibraryResult<MediaItem>> = futureResult {
+        val songId = mediaId.toLongOrNull()
+        val dao = (context.applicationContext as HarmonicApp).database.songDao()
+        val song = songId?.let { dao.getSongsByIds(listOf(it)).firstOrNull() }
+        if (song != null) LibraryResult.ofItem(songItem(song), null)
+        else LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+    }
+
+    override fun onGetChildren(
+        session: MediaLibrarySession,
+        browser: MediaSession.ControllerInfo,
+        parentId: String,
+        page: Int,
+        pageSize: Int,
+        params: LibraryParams?
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = futureResult {
+        val dao = (context.applicationContext as HarmonicApp).database.songDao()
+        val items: List<MediaItem> = when {
+            parentId == LIBRARY_ROOT_ID -> listOf(
+                folderItem("songs", "Músicas"),
+                folderItem("favorites", "Favoritas"),
+                folderItem("artists", "Artistas"),
+                folderItem("albums", "Álbuns"),
+                folderItem("playlists", "Playlists")
+            )
+            parentId == "songs" -> dao.getAllSongsOnce().map { songItem(it) }
+            parentId == "favorites" -> dao.getAllSongsOnce().filter { it.isFavorite }.map { songItem(it) }
+            parentId == "artists" -> dao.getArtists().first().map { name -> folderItem("artist:$name", name) }
+            parentId.startsWith("artist:") -> dao.getSongsByArtist(parentId.removePrefix("artist:")).first().map { songItem(it) }
+            parentId == "albums" -> dao.getAlbums().first().map { album -> folderItem("album:${album.albumId}", "${album.album} — ${album.artist}") }
+            parentId.startsWith("album:") -> {
+                val albumId = parentId.removePrefix("album:").toLongOrNull()
+                if (albumId != null) dao.getSongsByAlbum(albumId).first().map { songItem(it) } else emptyList()
+            }
+            parentId == "playlists" -> dao.getPlaylistsOnce().map { playlist -> folderItem("playlist:${playlist.id}", playlist.name) }
+            parentId.startsWith("playlist:") -> {
+                val playlistId = parentId.removePrefix("playlist:").toLongOrNull()
+                if (playlistId != null) dao.getPlaylistSongsOnce(playlistId).map { songItem(it) } else emptyList()
+            }
+            else -> emptyList()
+        }
+        LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+    }
+
+    /** Roda [block] numa corrotina e devolve o resultado como ListenableFuture — sem depender de nenhuma lib extra pra ponte corrotina/Future. */
+    private fun <T : Any> futureResult(block: suspend () -> T): ListenableFuture<T> {
+        val future = SettableFuture.create<T>()
+        scope.launch(Dispatchers.IO) {
+            future.set(block())
+        }
+        return future
+    }
+
+    private fun folderItem(id: String, title: String): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(id)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                    .build()
+            )
+            .build()
+
+    private fun songItem(song: Song): MediaItem =
+        MediaItem.Builder()
+            .setUri(song.path)
+            .setMediaId(song.id.toString())
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setAlbumTitle(song.album)
+                    .setIsBrowsable(false)
+                    .setIsPlayable(true)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                    .build()
+            )
+            .build()
 }
 
 /** [Context] aqui é sempre o próprio [PlaybackService] — pega a sessão dele de volta pra atualizar o layout fora do fluxo normal de callbacks. */

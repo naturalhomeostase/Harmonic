@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,7 +55,8 @@ fun SettingsScreen(
     onOpenHiddenFolders: () -> Unit,
     onOpenHiddenSongs: () -> Unit,
     onOpenAbout: () -> Unit,
-    onOpenMaintenance: () -> Unit
+    onOpenMaintenance: () -> Unit,
+    onOpenHistory: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -223,6 +225,13 @@ fun SettingsScreen(
                         android.widget.Toast.makeText(notifContext, "Já está desativada pra esse app", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
+            )
+
+            SettingsRow(
+                icon = Icons.Filled.Insights,
+                title = "Histórico e estatísticas",
+                subtitle = "Resumo de reproduções, mais tocadas e tocadas recentemente",
+                onClick = onOpenHistory
             )
 
             SettingsRow(

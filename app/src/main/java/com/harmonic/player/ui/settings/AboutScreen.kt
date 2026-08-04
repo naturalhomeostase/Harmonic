@@ -87,13 +87,12 @@ fun AboutScreen(onBack: () -> Unit) {
 
             AboutSection(title = "Contato") {
                 Text(
-                    // TODO: troque pelo seu e-mail de contato de verdade.
-                    "seu-email@exemplo.com",
+                    "natural.homeostase@gmail.com",
                     color = Color.White.copy(alpha = 0.85f),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.clickable {
                         val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
-                            data = android.net.Uri.parse("mailto:seu-email@exemplo.com")
+                            data = android.net.Uri.parse("mailto:natural.homeostase@gmail.com")
                             putExtra(android.content.Intent.EXTRA_SUBJECT, "Music Box — contato")
                         }
                         context.startActivity(intent)
