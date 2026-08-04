@@ -1,14 +1,23 @@
-*.iml
-.gradle/
-/local.properties
-.idea/
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# Build
+/build/
+/app/build/
 *.apk
 *.aab
-/app/build
-/app/release
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# Local config (nunca deve ser versionado)
 local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+.DS_Store
+
+# Keystore de RELEASE — reconstruído em CI a partir do secret
+# RELEASE_KEYSTORE_BASE64 (ver comentário em app/build.gradle.kts).
+# O debug.keystore continua versionado normalmente (senha pública).
+keystore/release.keystore
