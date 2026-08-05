@@ -171,6 +171,10 @@ interface SongDao {
     @Query("UPDATE songs SET playCount = playCount + 1, lastPlayedAt = :timestamp WHERE id = :songId")
     suspend fun registerPlay(songId: Long, timestamp: Long = System.currentTimeMillis())
 
+    /** Zera histórico/estatísticas de reprodução de TODAS as músicas — usado no botão "Resetar" da tela de Histórico e estatísticas. Não mexe em favoritos nem em nenhum outro dado. */
+    @Query("UPDATE songs SET playCount = 0, lastPlayedAt = NULL")
+    suspend fun resetPlayStats()
+
     @Query("UPDATE songs SET playbackPositionMs = :positionMs WHERE id = :songId")
     suspend fun savePlaybackPosition(songId: Long, positionMs: Long)
 

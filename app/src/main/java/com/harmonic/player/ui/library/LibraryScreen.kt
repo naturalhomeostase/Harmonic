@@ -281,19 +281,25 @@ fun LibraryScreen(
     var quickMenuAlbum by remember { mutableStateOf<AlbumSummary?>(null) }
     var quickMenuArtist by remember { mutableStateOf<String?>(null) }
     var quickMenuFolder by remember { mutableStateOf<String?>(null) }
-    var sortKey by remember { mutableStateOf("title") }
-    var sortAscending by remember { mutableStateOf(true) }
+    // rememberSaveable (não remember): sem isso, o critério de ordenação
+    // "esquecia" toda vez que a tela saía de composição — por exemplo, ao
+    // tocar uma música e voltar da tela "Tocando agora", ou trocar de aba
+    // — voltando sempre pro padrão de fábrica em vez de manter a escolha
+    // da pessoa. As telas de detalhe (dentro de um artista/álbum) já
+    // usavam rememberSaveable por esse mesmo motivo; aqui só faltava.
+    var sortKey by rememberSaveable { mutableStateOf("title") }
+    var sortAscending by rememberSaveable { mutableStateOf(true) }
     var minDurationFilterSec by remember { mutableStateOf(0) }
     var maxDurationFilterSec by remember { mutableStateOf(0) } // 0 = sem limite máximo
     var showDurationFilterDialog by remember { mutableStateOf(false) }
-    var favoritesSortKey by remember { mutableStateOf("title") }
-    var favoritesSortAscending by remember { mutableStateOf(true) }
-    var albumSortKey by remember { mutableStateOf("album") }
-    var albumSortAscending by remember { mutableStateOf(true) }
-    var artistSortKey by remember { mutableStateOf("name") }
-    var artistSortAscending by remember { mutableStateOf(true) }
-    var playlistSortKey by remember { mutableStateOf("createdAt") }
-    var playlistSortAscending by remember { mutableStateOf(false) }
+    var favoritesSortKey by rememberSaveable { mutableStateOf("title") }
+    var favoritesSortAscending by rememberSaveable { mutableStateOf(true) }
+    var albumSortKey by rememberSaveable { mutableStateOf("album") }
+    var albumSortAscending by rememberSaveable { mutableStateOf(true) }
+    var artistSortKey by rememberSaveable { mutableStateOf("name") }
+    var artistSortAscending by rememberSaveable { mutableStateOf(true) }
+    var playlistSortKey by rememberSaveable { mutableStateOf("createdAt") }
+    var playlistSortAscending by rememberSaveable { mutableStateOf(false) }
     // Ordenação das músicas DENTRO da página de um artista/álbum aberto
     // (botão "ordenar por" ao lado do play/"⋮" no cabeçalho dessas páginas).
     var artistDetailSortKey by rememberSaveable { mutableStateOf("title") }
@@ -892,7 +898,7 @@ fun LibraryScreen(
                             "artist" -> songs.sortedBy { it.artist.lowercase() }
                             "duration" -> songs.sortedBy { it.durationMs }
                             "dateAdded" -> songs.sortedBy { it.dateAdded }
-                            "year" -> songs.sortedBy { it.year ?: 0 }
+                            "year" -> songs.sortedWith(compareBy({ it.year ?: 0 }, { it.album.lowercase() }, { it.trackNumber ?: 0 }))
                             "playCount" -> songs.sortedBy { it.playCount }
                             "lastPlayedAt" -> songs.sortedBy { it.lastPlayedAt ?: 0L }
                             else -> songs.sortedBy { it.title.lowercase() }
@@ -932,7 +938,7 @@ fun LibraryScreen(
                             "artist" -> favoritesRaw.sortedBy { it.artist.lowercase() }
                             "duration" -> favoritesRaw.sortedBy { it.durationMs }
                             "dateAdded" -> favoritesRaw.sortedBy { it.dateAdded }
-                            "year" -> favoritesRaw.sortedBy { it.year ?: 0 }
+                            "year" -> favoritesRaw.sortedWith(compareBy({ it.year ?: 0 }, { it.album.lowercase() }, { it.trackNumber ?: 0 }))
                             "playCount" -> favoritesRaw.sortedBy { it.playCount }
                             "lastPlayedAt" -> favoritesRaw.sortedBy { it.lastPlayedAt ?: 0L }
                             else -> favoritesRaw.sortedBy { it.title.lowercase() }
@@ -1016,7 +1022,7 @@ fun LibraryScreen(
                         val base = when (artistDetailSortKey) {
                             "duration" -> songsRaw.sortedBy { it.durationMs }
                             "dateAdded" -> songsRaw.sortedBy { it.dateAdded }
-                            "year" -> songsRaw.sortedBy { it.year ?: 0 }
+                            "year" -> songsRaw.sortedWith(compareBy({ it.year ?: 0 }, { it.album.lowercase() }, { it.trackNumber ?: 0 }))
                             "playCount" -> songsRaw.sortedBy { it.playCount }
                             "lastPlayedAt" -> songsRaw.sortedBy { it.lastPlayedAt ?: 0L }
                             else -> songsRaw.sortedBy { it.title.lowercase() }
@@ -1104,7 +1110,7 @@ fun LibraryScreen(
                         val base = when (albumSortKey) {
                             "artist" -> albumsRaw.sortedBy { it.artist.lowercase() }
                             "trackCount" -> albumsRaw.sortedBy { it.trackCount }
-                            "year" -> albumsRaw.sortedBy { it.year ?: 0 }
+                            "year" -> albumsRaw.sortedWith(compareBy({ it.year ?: 0 }, { it.album.lowercase() }))
                             "playCount" -> albumsRaw.sortedBy { it.playCount }
                             else -> albumsRaw.sortedBy { it.album.lowercase() }
                         }
@@ -2313,39 +2319,75 @@ private fun SongList(
 
     if (showPlaylistPickerForSelection) {
         val playlists by dao.getPlaylists().collectAsState(initial = emptyList())
-        AlertDialog(
-            onDismissRequest = { showPlaylistPickerForSelection = false },
-            title = { Text("Adicionar ${selectedIds.size} música(s) a qual playlist?") },
-            text = {
-                Column {
-                    if (playlists.isEmpty()) {
-                        Text("Nenhuma playlist ainda.")
-                    }
-                    playlists.forEach { playlist ->
-                        ListItem(
-                            headlineContent = { Text(playlist.name) },
-                            modifier = Modifier.clickable {
-                                val songsToAdd = selectedSongs
-                                scope.launch {
-                                    var pos = dao.getPlaylistSongs(playlist.id).first().size
-                                    songsToAdd.forEach { song ->
-                                        dao.addToPlaylist(com.harmonic.player.data.PlaylistSongCrossRef(playlist.id, song.id, pos))
-                                        pos++
+        var showCreateFromSelection by remember { mutableStateOf(false) }
+        if (!showCreateFromSelection) {
+            AlertDialog(
+                onDismissRequest = { showPlaylistPickerForSelection = false },
+                title = { Text("Adicionar ${selectedIds.size} música(s) a qual playlist?") },
+                text = {
+                    Column {
+                        if (playlists.isEmpty()) {
+                            Text("Nenhuma playlist ainda.")
+                        }
+                        playlists.forEach { playlist ->
+                            ListItem(
+                                headlineContent = { Text(playlist.name) },
+                                modifier = Modifier.clickable {
+                                    val songsToAdd = selectedSongs
+                                    scope.launch {
+                                        var pos = dao.getPlaylistSongs(playlist.id).first().size
+                                        songsToAdd.forEach { song ->
+                                            dao.addToPlaylist(com.harmonic.player.data.PlaylistSongCrossRef(playlist.id, song.id, pos))
+                                            pos++
+                                        }
+                                        dao.touchPlaylist(playlist.id)
                                     }
-                                    dao.touchPlaylist(playlist.id)
+                                    showPlaylistPickerForSelection = false
+                                    selectedIds = emptySet()
                                 }
-                                showPlaylistPickerForSelection = false
-                                selectedIds = emptySet()
-                            }
+                            )
+                        }
+                        ListItem(
+                            leadingContent = { Icon(Icons.Filled.PlaylistAdd, contentDescription = null) },
+                            headlineContent = { Text("Nova playlist...") },
+                            modifier = Modifier.clickable { showCreateFromSelection = true }
                         )
                     }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showPlaylistPickerForSelection = false }) { Text("Cancelar") }
                 }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showPlaylistPickerForSelection = false }) { Text("Cancelar") }
-            }
-        )
+            )
+        } else {
+            var newPlaylistName by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { showPlaylistPickerForSelection = false },
+                title = { Text("Nova playlist") },
+                text = {
+                    OutlinedTextField(value = newPlaylistName, onValueChange = { newPlaylistName = it }, singleLine = true)
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = newPlaylistName.isNotBlank(),
+                        onClick = {
+                            val songsToAdd = selectedSongs
+                            scope.launch {
+                                val newId = dao.insertPlaylist(Playlist(name = newPlaylistName.trim()))
+                                songsToAdd.forEachIndexed { index, s ->
+                                    dao.addToPlaylist(PlaylistSongCrossRef(newId, s.id, index))
+                                }
+                            }
+                            showPlaylistPickerForSelection = false
+                            selectedIds = emptySet()
+                        }
+                    ) { Text("Criar e adicionar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPlaylistPickerForSelection = false }) { Text("Cancelar") }
+                }
+            )
+        }
     }
 
     if (showDeleteSelectedConfirm) {
@@ -2406,7 +2448,7 @@ private fun SelectionActionBar(
             Icon(Icons.Filled.PlaylistAdd, contentDescription = "Adicionar à playlist", tint = MaterialTheme.colorScheme.primary)
         }
         IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = "Excluir", tint = MaterialTheme.colorScheme.error)
+            Icon(Icons.Filled.Delete, contentDescription = "Excluir", tint = MaterialTheme.colorScheme.primary)
         }
     }
 }

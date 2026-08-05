@@ -67,6 +67,7 @@ fun NowPlayingScreen(
     var selectedLyricIndex by remember { mutableStateOf<Int?>(null) }
     val coverDisplayMode by settings.coverDisplayMode.collectAsState(initial = "VINYL")
     var lyricsResult by remember { mutableStateOf<com.harmonic.player.data.LyricsResult>(com.harmonic.player.data.LyricsResult.NotFound) }
+    val playbackSpeed by settings.playbackSpeed.collectAsState(initial = 1f)
 
     // Bitmap da capa da música atual — usado em três lugares: fundo desfocado,
     // arte dentro do vinil giratório, e extração de cor (Palette) pra pintar
@@ -250,6 +251,23 @@ fun NowPlayingScreen(
                     }
                     IconButton(onClick = onOpenEqualizer) {
                         Icon(Icons.Filled.Equalizer, contentDescription = "Equalizador", tint = Color.White.copy(alpha = 0.85f))
+                    }
+                    // Botão discreto de velocidade: cada toque avança pro
+                    // próximo valor do ciclo (sem precisar abrir Configurações
+                    // toda vez que a pessoa quer ouvir mais rápido/devagar).
+                    // Mesmo estilo do "A-B" logo abaixo — um texto pequeno no
+                    // lugar de um ícone, já que não tem ícone padrão pra isso.
+                    IconButton(onClick = {
+                        val next = nextPlaybackSpeed(playbackSpeed)
+                        playerController.setPlaybackSpeed(next)
+                        scope.launch { settings.setPlaybackSpeed(next) }
+                    }) {
+                        Text(
+                            text = formatPlaybackSpeed(playbackSpeed),
+                            color = if (playbackSpeed != 1f) pageAccent else Color.White.copy(alpha = 0.85f),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
                     }
                     // A-B repeat: 1º toque marca o ponto A, 2º marca o B (e
                     // já começa a repetir esse trecho), 3º desliga. Sem
@@ -907,6 +925,26 @@ private fun formatDuration(ms: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+/** Ciclo de velocidades do botão discreto na tela "Tocando agora". */
+private val playbackSpeedCycle = listOf(1f, 1.25f, 1.5f, 1.75f, 2f, 0.5f, 0.75f)
+
+private fun nextPlaybackSpeed(current: Float): Float {
+    val currentIndex = playbackSpeedCycle.indexOfFirst { kotlin.math.abs(it - current) < 0.01f }
+    val nextIndex = if (currentIndex == -1) 0 else (currentIndex + 1) % playbackSpeedCycle.size
+    return playbackSpeedCycle[nextIndex]
+}
+
+/** "1x", "1.5x", "0.75x"... — sem casas decimais desnecessárias. */
+private fun formatPlaybackSpeed(speed: Float): String {
+    val text = if (speed == speed.toInt().toFloat()) {
+        speed.toInt().toString()
+    } else {
+        // Remove zero à direita (1.50 -> 1.5) mantendo vírgula/ponto simples.
+        "%.2f".format(speed).trimEnd('0').trimEnd('.')
+    }
+    return "${text}x"
 }
 
 /** Formata bytes como "3,4 MB" (ou KB pros arquivos bem pequenos). */

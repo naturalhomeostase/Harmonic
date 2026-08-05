@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.harmonic.player.data.MusicDatabase
 import com.harmonic.player.data.Song
 import com.harmonic.player.playback.PlayerController
+import kotlinx.coroutines.launch
 
 /**
  * Resumo geral da biblioteca + duas listas que já existiam prontas no
@@ -30,11 +32,18 @@ import com.harmonic.player.playback.PlayerController
 @Composable
 fun HistoryStatsScreen(database: MusicDatabase, playerController: PlayerController, onBack: () -> Unit) {
     val dao = database.songDao()
+    val scope = rememberCoroutineScope()
     val mostPlayed by dao.getMostPlayed().collectAsState(initial = emptyList())
     val recentlyPlayed by dao.getRecentlyPlayed().collectAsState(initial = emptyList())
     var allSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var showResetConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { allSongs = dao.getAllSongsOnce() }
+    // allSongs também precisa recarregar depois do reset — sem a chave
+    // aqui, o LaunchedEffect só rodava uma vez (Unit) e os totais no topo
+    // ("reproduções", "tempo ouvido") continuavam mostrando os números
+    // antigos mesmo depois de zerar tudo.
+    var reloadSignal by remember { mutableStateOf(0) }
+    LaunchedEffect(reloadSignal) { allSongs = dao.getAllSongsOnce() }
 
     val totalPlays = allSongs.sumOf { it.playCount }
     val totalListenedMs = allSongs.sumOf { it.playCount.toLong() * it.durationMs }
@@ -48,6 +57,11 @@ fun HistoryStatsScreen(database: MusicDatabase, playerController: PlayerControll
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showResetConfirm = true }) {
+                        Icon(Icons.Filled.DeleteSweep, contentDescription = "Resetar histórico e estatísticas")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -119,6 +133,26 @@ fun HistoryStatsScreen(database: MusicDatabase, playerController: PlayerControll
 
             item { Spacer(Modifier.height(24.dp)) }
         }
+    }
+
+    if (showResetConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirm = false },
+            title = { Text("Resetar histórico e estatísticas?") },
+            text = { Text("Isso zera o número de reproduções e a data da última vez tocada de TODAS as músicas. Suas músicas, playlists e favoritos continuam intactos. Não dá pra desfazer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showResetConfirm = false
+                    scope.launch {
+                        dao.resetPlayStats()
+                        reloadSignal++
+                    }
+                }) { Text("Resetar", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirm = false }) { Text("Cancelar") }
+            }
+        )
     }
 }
 
