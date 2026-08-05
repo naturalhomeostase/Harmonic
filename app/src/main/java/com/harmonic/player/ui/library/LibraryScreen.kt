@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import kotlin.math.roundToInt
 import com.harmonic.player.ui.theme.withSingleAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -137,19 +138,50 @@ private val playlistSortOptions = listOf(
 )
 
 /**
- * Gradiente do título: cor pura do tema/imagem escolhido, sem nenhum
- * ajuste de claridade, saturação ou sombra por trás. Toda tentativa
- * anterior de "corrigir" a legibilidade sozinho (puxar a claridade pra
- * uma faixa seura, escurecer em loop, sombra difusa) só deixava a cor
- * mais opaca e ainda dava uma aparência de brilho/blur na fonte que não
- * combinava com o resto do app (esse tipo de brilho é usado só em
- * botões, não em texto). Já que o gradiente no título é uma OPÇÃO (não
- * vem ligada por padrão) e a pessoa escolhe as próprias cores, não faz
- * sentido o app tentar adivinhar/corrigir por ela — se uma combinação
- * específica ficar difícil de ler, a solução é trocar a cor, não o app
- * aplicar efeito nenhum em cima.
+ * Gradiente do título: usa o MATIZ real das cores do tema (a "cor" em si
+ * não muda, continua sendo a paleta escolhida pela pessoa), mas ajusta
+ * saturação e claridade pra a cor ficar viva e se destacar do fundo —
+ * sem aplicar sombra, brilho ou blur nenhum, só a própria cor mais forte.
+ *
+ * Sem isso, como o fundo do app é feito com as MESMAS cores do tema
+ * (ver [com.harmonic.player.ui.common.AppBackground]), um gradiente de
+ * texto com a cor "pura" do tema praticamente some em cima do fundo —
+ * fica tudo no mesmo tom. Aqui a saturação é elevada a um mínimo vívido
+ * e a claridade é empurrada pro lado oposto do fundo (texto claro sobre
+ * fundo escuro, texto escuro sobre fundo claro), garantindo contraste
+ * mesmo quando a cor de origem é próxima do fundo.
+ *
+ * @param backgroundIsDark se o fundo por trás do texto (já considerando
+ *   o véu/scrim aplicado em Aparência) é escuro ou claro no geral.
  */
-private fun readableGradientTextColors(sourceColors: List<Color>): List<Color> = sourceColors
+// internal (não private): reaproveitada pelo preview ao vivo em
+// AppearanceScreen, pra mostrar exatamente a mesma cor que a Biblioteca vai
+// usar de verdade — sem isso o preview mentia sobre como o gradiente ficaria.
+internal fun readableGradientTextColors(
+    sourceColors: List<Color>,
+    backgroundIsDark: Boolean = true
+): List<Color> = sourceColors.map { vividTitleColor(it, backgroundIsDark) }
+
+internal fun vividTitleColor(color: Color, backgroundIsDark: Boolean): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.RGBToHSV(
+        (color.red * 255f).roundToInt().coerceIn(0, 255),
+        (color.green * 255f).roundToInt().coerceIn(0, 255),
+        (color.blue * 255f).roundToInt().coerceIn(0, 255),
+        hsv
+    )
+    // Satura bem a cor (mantendo o matiz original) pra não ficar
+    // "lavada" — cores já vívidas continuam como estão.
+    hsv[1] = hsv[1].coerceAtLeast(0.6f)
+    // Empurra o brilho pro extremo oposto ao do fundo, garantindo
+    // contraste mesmo quando a cor de origem é parecida com o fundo.
+    hsv[2] = if (backgroundIsDark) {
+        hsv[2].coerceIn(0.88f, 1f)
+    } else {
+        hsv[2].coerceIn(0f, 0.32f)
+    }
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
 
 
 /**
@@ -203,6 +235,9 @@ fun LibraryScreen(
     val gradientThemeName by settings.gradientTheme.collectAsState(initial = null)
     val titleGradientColorStart by settings.titleGradientColorStart.collectAsState(initial = null)
     val titleGradientColorEnd by settings.titleGradientColorEnd.collectAsState(initial = null)
+    val backgroundImageActive by settings.defaultWallpaper.collectAsState(initial = null)
+    val customBackgroundUri by settings.backgroundUri.collectAsState(initial = null)
+    val backgroundScrimAlpha by settings.backgroundScrimAlpha.collectAsState(initial = 45)
     val albumGridView by settings.albumGridView.collectAsState(initial = false)
     val artistGridView by settings.artistGridView.collectAsState(initial = false)
     val hiddenTabNames by settings.hiddenTabs.collectAsState(initial = emptySet())
@@ -210,18 +245,28 @@ fun LibraryScreen(
         LibraryTab.values().filter { it == LibraryTab.SONGS || it.name !in hiddenTabNames }
     }
     val titleBrush = if (titleGradientEnabled) {
-        // A claridade do texto agora é decidida dentro de
-        // readableGradientTextColors, usando a luminância real das cores
-        // de fundo passadas — não precisa mais calcular isso aqui fora.
-        if (titleGradientColorStart != null && titleGradientColorEnd != null) {
-            // Cores escolhidas livremente pelo usuário na roda de cores.
-            val source = listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!))
-            Brush.linearGradient(readableGradientTextColors(source))
+        // Cores de origem: as escolhidas livremente pela pessoa na roda de
+        // cores, ou as do tema de gradiente ativo.
+        val source = if (titleGradientColorStart != null && titleGradientColorEnd != null) {
+            listOf(Color(titleGradientColorStart!!), Color(titleGradientColorEnd!!))
         } else {
             val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.APP_ICON
-            val source = theme.colorsArgb.map { Color(it) }
-            Brush.linearGradient(readableGradientTextColors(source))
+            theme.colorsArgb.map { Color(it) }
         }
+        // Estima se o fundo atrás do texto é claro ou escuro, já
+        // considerando o véu (scrim) preto aplicado em cima — mesma lógica
+        // usada em AppBackground. Com imagem de fundo custom não dá pra
+        // saber a cor sem decodificar o bitmap aqui, então assume escuro
+        // (o caso mais comum e o padrão de fábrica do app).
+        val backgroundIsDark = if (customBackgroundUri != null || backgroundImageActive != null) {
+            true
+        } else {
+            val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.APP_ICON
+            val avgLuminance = theme.colorsArgb.map { Color(it).luminance() }.average().toFloat()
+            val scrimmedLuminance = avgLuminance * (1f - backgroundScrimAlpha / 100f)
+            scrimmedLuminance < 0.5f
+        }
+        Brush.linearGradient(readableGradientTextColors(source, backgroundIsDark))
     } else null
 
     var bulkAddSongs by remember { mutableStateOf<List<Song>?>(null) }
@@ -2604,21 +2649,47 @@ private fun SongOptionsSheet(
     // essa resposta. Guardamos o valor pendente porque, sem isso, aprovar
     // a permissão na tela do sistema não tentava a mudança de novo sozinho
     // — o usuário aprovava e nada acontecia.
+    //
+    // Esse launcher atende tanto renomear quanto excluir, então guardamos
+    // qual dos dois está pendente pra saber o que fazer quando o resultado
+    // chega — antes só existia pendingRename, então aprovar a EXCLUSÃO no
+    // diálogo do sistema não fazia nada (o registro ficava órfão no banco).
     var pendingRename by remember { mutableStateOf<Pair<android.content.ContentValues, String>?>(null) }
+    var pendingDelete by remember { mutableStateOf(false) }
     val securityLauncher = rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
-        val (values, newPath) = pendingRename ?: return@rememberLauncherForActivityResult
+        val rename = pendingRename
+        val wasDelete = pendingDelete
         pendingRename = null
+        pendingDelete = false
         if (result.resultCode == android.app.Activity.RESULT_OK) {
-            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                try {
-                    context.contentResolver.update(songUri, values, null, null)
-                    dao.updateSongPath(song.id, newPath)
-                    android.media.MediaScannerConnection.scanFile(context, arrayOf(song.path, newPath), null, null)
-                } catch (e: Exception) { /* usuário pode ter negado; ignora */ }
+            if (rename != null) {
+                val (values, newPath) = rename
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        context.contentResolver.update(songUri, values, null, null)
+                        dao.updateSongPath(song.id, newPath)
+                        android.media.MediaScannerConnection.scanFile(context, arrayOf(song.path, newPath), null, null)
+                    } catch (e: Exception) { /* usuário pode ter negado; ignora */ }
+                }
+            } else if (wasDelete) {
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    // No Android 11+ o próprio sistema já apaga o arquivo ao
+                    // aprovar o createDeleteRequest; em versões anteriores
+                    // (RecoverableSecurityException) precisa tentar de novo
+                    // agora que a permissão foi concedida. Nos dois casos, o
+                    // registro local também precisa sair do banco.
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT < 30) {
+                            context.contentResolver.delete(songUri, null, null)
+                        }
+                    } catch (e: Exception) { /* já pode ter sido apagado pelo sistema */ }
+                    dao.deleteSongById(song.id)
+                }
             }
         }
+        onDismiss()
     }
 
     // Salvar tags grava direto no arquivo via jaudiotagger — não passa pelo
@@ -2677,6 +2748,13 @@ private fun SongOptionsSheet(
         saveTagsToFileAndDb(context, dao, song, values)
     }
 
+    // onDismiss() só roda DEPOIS do bloco terminar — mesmo motivo da
+    // correção em "Editar nome do arquivo": se o sheet fosse fechado logo
+    // após o scope.launch(), a composable (e o securityLauncher registrado
+    // nela) já tinha saído de cena antes do IntentSender do sistema ser
+    // lançado, e o launch() batia num launcher desregistrado
+    // (IllegalStateException: "Attempting to launch an unregistered
+    // ActivityResultLauncher").
     fun deleteSong() {
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
@@ -2688,10 +2766,22 @@ private fun SongOptionsSheet(
                 } else {
                     (e as? android.app.RecoverableSecurityException)?.userAction?.actionIntent?.intentSender
                 }
-                intentSender?.let {
-                    securityLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build())
+                if (intentSender != null) {
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        pendingDelete = true
+                        securityLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(intentSender).build())
+                    }
+                    // Não fecha o sheet aqui: o securityLauncher precisa
+                    // continuar registrado até o usuário responder ao pedido
+                    // de permissão do sistema — quem fecha o sheet depois é
+                    // o próprio callback do securityLauncher.
+                    return@launch
                 }
             } catch (e: Exception) { /* nada a fazer, evita derrubar o app */ }
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                showDeleteConfirm = false
+                onDismiss()
+            }
         }
     }
 
@@ -3152,9 +3242,12 @@ private fun SongOptionsSheet(
             text = { Text("\"${song.title}\" será apagada do dispositivo. Essa ação não pode ser desfeita.") },
             confirmButton = {
                 TextButton(onClick = {
-                    deleteSong()
+                    // deleteSong() fecha o sheet sozinho (showDeleteConfirm
+                    // e onDismiss) quando a exclusão termina — não fazemos
+                    // isso aqui pra não desregistrar o securityLauncher
+                    // antes dele ser usado, caso o sistema peça permissão.
                     showDeleteConfirm = false
-                    onDismiss()
+                    deleteSong()
                 }) { Text("Excluir", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {

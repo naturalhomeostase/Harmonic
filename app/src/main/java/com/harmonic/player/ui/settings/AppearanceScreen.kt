@@ -634,10 +634,24 @@ private fun AppearancePreviewMockup(
             Spacer(Modifier.height(16.dp))
 
             val titleBrush = if (titleGradientEnabled) {
-                if (titleColorStart != null && titleColorEnd != null)
-                    Brush.linearGradient(listOf(titleColorStart, titleColorEnd))
-                else
-                    Brush.linearGradient(gradientTheme.colorsArgb.map { Color(it) })
+                // Mesma função usada na Biblioteca de verdade (ver
+                // LibraryScreen.kt) — sem isso o preview mostrava a cor
+                // "crua" do tema, diferente do que a pessoa via depois na
+                // lista de músicas.
+                val source = if (titleColorStart != null && titleColorEnd != null) {
+                    listOf(titleColorStart, titleColorEnd)
+                } else {
+                    gradientTheme.colorsArgb.map { Color(it) }
+                }
+                val backgroundIsDark = if (useImageBackground) {
+                    true
+                } else {
+                    val avgLuminance = gradientTheme.colorsArgb.map { Color(it).luminance() }.average().toFloat()
+                    (avgLuminance * (1f - scrimAlphaPercent / 100f)) < 0.5f
+                }
+                Brush.linearGradient(
+                    com.harmonic.player.ui.library.readableGradientTextColors(source, backgroundIsDark)
+                )
             } else null
 
             fakeSongs.forEach { (title, artist) ->
