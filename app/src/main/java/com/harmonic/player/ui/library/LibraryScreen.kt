@@ -183,6 +183,30 @@ internal fun vividTitleColor(color: Color, backgroundIsDark: Boolean): Color {
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
+/**
+ * Ordena por ano SEM tratar "sem ano" como ano 0. Antes o `?: 0` fazia toda
+ * música sem essa metadata (bem comum — nem todo MP3 tem a tag de ano
+ * preenchida) parecer "lançada no ano 0", ou seja, mais antiga que
+ * QUALQUER música com ano real — inclusive um álbum de 1967, por exemplo,
+ * que ficava enterrado atrás de dezenas de músicas sem ano nenhum ao
+ * ordenar "crescente". Aqui, músicas sem ano ficam sempre no final da
+ * lista, não importa a direção escolhida.
+ */
+private fun sortSongsByYear(songs: List<Song>, ascending: Boolean): List<Song> {
+    val (withYear, withoutYear) = songs.partition { it.year != null }
+    val ordered = withYear.sortedWith(compareBy({ it.year }, { it.album.lowercase() }, { it.trackNumber ?: 0 }))
+    val directional = if (ascending) ordered else ordered.reversed()
+    return directional + withoutYear.sortedBy { it.title.lowercase() }
+}
+
+/** Mesma ideia de [sortSongsByYear], mas pra lista de álbuns. */
+private fun sortAlbumsByYear(albums: List<com.harmonic.player.data.AlbumSummary>, ascending: Boolean): List<com.harmonic.player.data.AlbumSummary> {
+    val (withYear, withoutYear) = albums.partition { it.year != null }
+    val ordered = withYear.sortedWith(compareBy({ it.year }, { it.album.lowercase() }))
+    val directional = if (ascending) ordered else ordered.reversed()
+    return directional + withoutYear.sortedBy { it.album.lowercase() }
+}
+
 
 /**
  * Brush opcional pro título das músicas na lista, quando o usuário ativa
@@ -368,14 +392,21 @@ fun LibraryScreen(
     // com a busca aberta (e sem estar dentro de artista/álbum), o gesto de
     // voltar não tinha NENHUM BackHandler ativo pra interceptar, então caía
     // no comportamento padrão do sistema (minimizar o app) em vez de só
-    // fechar a busca.
-    androidx.activity.compose.BackHandler(enabled = isSearching || drilledGroup != null || drilledAlbumId != null) {
+    // fechar a busca. Também passou a voltar pra aba "Músicas" antes de
+    // deixar o gesto minimizar o app, caso a pessoa esteja em outra aba
+    // (Artistas, Álbuns, Gêneros, Pastas, Playlists) — assim "voltar" some
+    // primeiro pela navegação interna do app, só saindo de verdade depois.
+    androidx.activity.compose.BackHandler(
+        enabled = isSearching || drilledGroup != null || drilledAlbumId != null || selectedTab != LibraryTab.SONGS
+    ) {
         if (isSearching) {
             isSearching = false
             searchQuery = ""
-        } else {
+        } else if (drilledGroup != null || drilledAlbumId != null) {
             drilledGroup = null
             drilledAlbumId = null
+        } else {
+            selectedTab = LibraryTab.SONGS
         }
     }
 
@@ -894,16 +925,19 @@ fun LibraryScreen(
                         }
                     }
                     val sortedSongs = remember(songs, sortKey, sortAscending) {
-                        val base = when (sortKey) {
-                            "artist" -> songs.sortedBy { it.artist.lowercase() }
-                            "duration" -> songs.sortedBy { it.durationMs }
-                            "dateAdded" -> songs.sortedBy { it.dateAdded }
-                            "year" -> songs.sortedWith(compareBy({ it.year ?: 0 }, { it.album.lowercase() }, { it.trackNumber ?: 0 }))
-                            "playCount" -> songs.sortedBy { it.playCount }
-                            "lastPlayedAt" -> songs.sortedBy { it.lastPlayedAt ?: 0L }
-                            else -> songs.sortedBy { it.title.lowercase() }
+                        if (sortKey == "year") {
+                            sortSongsByYear(songs, sortAscending)
+                        } else {
+                            val base = when (sortKey) {
+                                "artist" -> songs.sortedBy { it.artist.lowercase() }
+                                "duration" -> songs.sortedBy { it.durationMs }
+                                "dateAdded" -> songs.sortedBy { it.dateAdded }
+                                "playCount" -> songs.sortedBy { it.playCount }
+                                "lastPlayedAt" -> songs.sortedBy { it.lastPlayedAt ?: 0L }
+                                else -> songs.sortedBy { it.title.lowercase() }
+                            }
+                            if (sortAscending) base else base.reversed()
                         }
-                        if (sortAscending) base else base.reversed()
                     }
                     SongList(
                         songs = sortedSongs,
@@ -934,16 +968,19 @@ fun LibraryScreen(
                 selectedTab == LibraryTab.FAVORITES -> {
                     val favoritesRaw by dao.getFavorites().collectAsState(initial = emptyList())
                     val songs = remember(favoritesRaw, favoritesSortKey, favoritesSortAscending) {
-                        val base = when (favoritesSortKey) {
-                            "artist" -> favoritesRaw.sortedBy { it.artist.lowercase() }
-                            "duration" -> favoritesRaw.sortedBy { it.durationMs }
-                            "dateAdded" -> favoritesRaw.sortedBy { it.dateAdded }
-                            "year" -> favoritesRaw.sortedWith(compareBy({ it.year ?: 0 }, { it.album.lowercase() }, { it.trackNumber ?: 0 }))
-                            "playCount" -> favoritesRaw.sortedBy { it.playCount }
-                            "lastPlayedAt" -> favoritesRaw.sortedBy { it.lastPlayedAt ?: 0L }
-                            else -> favoritesRaw.sortedBy { it.title.lowercase() }
+                        if (favoritesSortKey == "year") {
+                            sortSongsByYear(favoritesRaw, favoritesSortAscending)
+                        } else {
+                            val base = when (favoritesSortKey) {
+                                "artist" -> favoritesRaw.sortedBy { it.artist.lowercase() }
+                                "duration" -> favoritesRaw.sortedBy { it.durationMs }
+                                "dateAdded" -> favoritesRaw.sortedBy { it.dateAdded }
+                                "playCount" -> favoritesRaw.sortedBy { it.playCount }
+                                "lastPlayedAt" -> favoritesRaw.sortedBy { it.lastPlayedAt ?: 0L }
+                                else -> favoritesRaw.sortedBy { it.title.lowercase() }
+                            }
+                            if (favoritesSortAscending) base else base.reversed()
                         }
-                        if (favoritesSortAscending) base else base.reversed()
                     }
                     SongList(
                         songs = songs,
@@ -1019,15 +1056,18 @@ fun LibraryScreen(
                     val artistName = drilledGroup!!
                     val songsRaw by dao.getSongsByArtist(artistName).collectAsState(initial = emptyList())
                     val songs = remember(songsRaw, artistDetailSortKey, artistDetailSortAscending) {
-                        val base = when (artistDetailSortKey) {
-                            "duration" -> songsRaw.sortedBy { it.durationMs }
-                            "dateAdded" -> songsRaw.sortedBy { it.dateAdded }
-                            "year" -> songsRaw.sortedWith(compareBy({ it.year ?: 0 }, { it.album.lowercase() }, { it.trackNumber ?: 0 }))
-                            "playCount" -> songsRaw.sortedBy { it.playCount }
-                            "lastPlayedAt" -> songsRaw.sortedBy { it.lastPlayedAt ?: 0L }
-                            else -> songsRaw.sortedBy { it.title.lowercase() }
+                        if (artistDetailSortKey == "year") {
+                            sortSongsByYear(songsRaw, artistDetailSortAscending)
+                        } else {
+                            val base = when (artistDetailSortKey) {
+                                "duration" -> songsRaw.sortedBy { it.durationMs }
+                                "dateAdded" -> songsRaw.sortedBy { it.dateAdded }
+                                "playCount" -> songsRaw.sortedBy { it.playCount }
+                                "lastPlayedAt" -> songsRaw.sortedBy { it.lastPlayedAt ?: 0L }
+                                else -> songsRaw.sortedBy { it.title.lowercase() }
+                            }
+                            if (artistDetailSortAscending) base else base.reversed()
                         }
-                        if (artistDetailSortAscending) base else base.reversed()
                     }
                     val isFavArtist = favoriteArtists.contains(artistName)
                     val isArtistQueueActive = isQueueFullyActive(playbackState, songs, "artist:$artistName")
@@ -1107,14 +1147,17 @@ fun LibraryScreen(
                 selectedTab == LibraryTab.ALBUMS && drilledAlbumId == null -> {
                     val albumsRaw by dao.getAlbums().collectAsState(initial = emptyList())
                     val albums = remember(albumsRaw, albumSortKey, albumSortAscending) {
-                        val base = when (albumSortKey) {
-                            "artist" -> albumsRaw.sortedBy { it.artist.lowercase() }
-                            "trackCount" -> albumsRaw.sortedBy { it.trackCount }
-                            "year" -> albumsRaw.sortedWith(compareBy({ it.year ?: 0 }, { it.album.lowercase() }))
-                            "playCount" -> albumsRaw.sortedBy { it.playCount }
-                            else -> albumsRaw.sortedBy { it.album.lowercase() }
+                        if (albumSortKey == "year") {
+                            sortAlbumsByYear(albumsRaw, albumSortAscending)
+                        } else {
+                            val base = when (albumSortKey) {
+                                "artist" -> albumsRaw.sortedBy { it.artist.lowercase() }
+                                "trackCount" -> albumsRaw.sortedBy { it.trackCount }
+                                "playCount" -> albumsRaw.sortedBy { it.playCount }
+                                else -> albumsRaw.sortedBy { it.album.lowercase() }
+                            }
+                            if (albumSortAscending) base else base.reversed()
                         }
-                        if (albumSortAscending) base else base.reversed()
                     }
                     val albumListState = rememberLazyListState()
                     val albumGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
@@ -1304,8 +1347,46 @@ fun LibraryScreen(
                 }
                 selectedTab == LibraryTab.GENRES -> {
                     val songs by dao.getSongsByGenre(drilledGroup!!).collectAsState(initial = emptyList())
+                    val genreName = drilledGroup!!
+                    val isGenreQueueActive = isQueueFullyActive(playbackState, songs, "genre:$genreName")
+                    val isPlayingGenre = isGenreQueueActive && playbackState.isPlaying
                     Column {
-                        GroupHeader(title = drilledGroup!!, onBack = { drilledGroup = null })
+                        GroupHeader(
+                            title = genreName,
+                            onBack = { drilledGroup = null },
+                            onPlay = {
+                                if (isGenreQueueActive) {
+                                    playerController.togglePlayPause()
+                                } else {
+                                    playerController.requestPlayQueue(songs, 0, "genre:$genreName", genreName)
+                                }
+                            },
+                            isPlayingThis = isPlayingGenre,
+                            // Mesmas opções que já existem em Álbuns/Artistas —
+                            // antes o menu de gênero nem existia, só dava pra
+                            // tocar música por música dentro dele.
+                            menuItems = listOf(
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
+                                    playerController.requestPlayQueue(songs, 0, "genre:$genreName", genreName)
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Shuffle, "Aleatório") {
+                                    playerController.requestPlayQueueShuffled(songs, "genre:$genreName", genreName)
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.QueueMusic, "Adicionar à fila") {
+                                    songs.forEach { playerController.addToQueueEnd(it) }
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlaylistAdd, "Adicionar à playlist") {
+                                    bulkAddSongs = songs
+                                },
+                                com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.Share, "Compartilhar") {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, "Ouvindo o gênero $genreName")
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(intent, null))
+                                }
+                            )
+                        )
                         SongList(
                             songs = songs,
                             onSongClick = { onSongClick(songs, songs.indexOf(it), "genre:${drilledGroup ?: ""}"); onOpenNowPlaying() },
@@ -1327,10 +1408,21 @@ fun LibraryScreen(
                 selectedTab == LibraryTab.FOLDERS -> {
                     val folder = drilledGroup!!
                     val songs by dao.getSongsByFolder(folder).collectAsState(initial = emptyList())
+                    val folderTitle = folder.substringAfterLast('/')
+                    val isFolderQueueActive = isQueueFullyActive(playbackState, songs, "folder:$folder")
+                    val isPlayingFolder = isFolderQueueActive && playbackState.isPlaying
                     Column {
                         GroupHeader(
-                            title = folder.substringAfterLast('/'),
+                            title = folderTitle,
                             onBack = { drilledGroup = null },
+                            onPlay = {
+                                if (isFolderQueueActive) {
+                                    playerController.togglePlayPause()
+                                } else {
+                                    playerController.requestPlayQueue(songs, 0, "folder:$folder", folderTitle)
+                                }
+                            },
+                            isPlayingThis = isPlayingFolder,
                             menuItems = listOf(
                                 com.harmonic.player.ui.common.ActionSheetItem(Icons.Filled.PlayArrow, "Tocar tudo") {
                                     playerController.requestPlayQueue(songs, 0, "folder:$folder", folder.substringAfterLast('/'))
