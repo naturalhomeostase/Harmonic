@@ -78,6 +78,12 @@ class PlaybackService : MediaLibraryService() {
         // Registra o player no holder — é o que permite ao widget de tela
         // inicial controlar a reprodução e mostrar o que está tocando.
         PlaybackServiceHolder.attach(player)
+        // Empurra o estado pro widget assim que o serviço conecta o player,
+        // sem esperar o primeiro evento (troca de música, play/pause) —
+        // cobre o caso de o widget já estar na tela inicial ANTES do app
+        // rodar: sem isso, ele só se atualizava de verdade na primeira
+        // interação, ficando "parado" até lá.
+        updateWidget()
 
         val sessionCallback = PlaybackSessionCallback(this, serviceScope)
         // Quando o coração é tocado dentro do app (não na notificação), o

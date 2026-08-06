@@ -3,12 +3,14 @@ package com.harmonic.player.widget
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.action.Action
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -25,6 +27,7 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.defaultWeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -34,7 +37,6 @@ import androidx.glance.layout.width
 import androidx.glance.action.ActionParameters
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
-import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.harmonic.player.MainActivity
@@ -53,6 +55,18 @@ import com.harmonic.player.playback.WidgetPlaybackState
  * com um degradê escuro por cima só o suficiente pra manter texto/botões
  * legíveis — sem capa (nada tocando, ou música sem capa), cai num fundo
  * simples na cor de destaque do app, nunca uma caixa cinza vazia.
+ *
+ * Médio e grande agora são bem mais HORIZONTAIS (barra curta e cartão
+ * largo, respectivamente) em vez de quase quadrados — o conteúdo dentro
+ * deles também virou uma Row (texto de um lado, controles do outro) pra
+ * caber direito nesse formato mais baixo.
+ *
+ * Os botões deixaram de simular um relevo 3D (gradiente + brilho + sombra
+ * falsos, um estilo datado) e agora são círculos chapados — translúcidos
+ * pros secundários (anterior/próxima), sólidos na cor de destaque pro
+ * principal (play/pause) — com ícones vetoriais de verdade no lugar de
+ * emoji (que renderizam diferente e meio "amador" dependendo do teclado/SO
+ * do aparelho).
  *
  * Consumo de bateria: os widgets só recompõem quando o estado observado
  * muda de verdade (comportamento padrão do Glance) — não há nenhum
@@ -123,89 +137,104 @@ private fun SmallContent(state: WidgetPlaybackState, white: ColorProvider) {
             .clickable(actionStartActivity<MainActivity>()),
         contentAlignment = Alignment.Center
     ) {
-        PhysicalButton(
-            emoji = if (state.isPlaying) "⏸" else "▶",
+        WidgetIconButton(
+            icon = if (state.isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play,
             size = 46.dp,
-            fontSize = 18.sp,
-            background = R.drawable.widget_button_3d_primary_selector,
+            iconSize = 20.dp,
+            background = R.drawable.widget_button_primary_selector,
             onClick = actionRunCallback<PlayPauseAction>()
         )
     }
 }
 
-/** Título/artista + anterior/play/próxima — o tamanho "padrão", equivalente ao widget único de antes. */
+/**
+ * Barra horizontal curta: título/artista de um lado, controles compactos do
+ * outro, tudo numa linha só — cabe no formato mais baixo (4x1) que o widget
+ * médio ganhou. Antes era uma Column empilhada (texto em cima, botões
+ * embaixo) pensada pro tamanho antigo, quase quadrado.
+ */
 @Composable
 private fun MediumContent(state: WidgetPlaybackState, white: ColorProvider, gray: ColorProvider) {
-    Column(modifier = GlanceModifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 14.dp)) {
-        Text(
-            text = state.title ?: "Music Box",
-            style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 15.sp, color = white),
-            maxLines = 1,
-            modifier = GlanceModifier.fillMaxWidth().clickable(actionStartActivity<MainActivity>())
-        )
-        Text(
-            text = state.artist ?: if (state.hasQueue) "" else "Nenhuma música tocando",
-            style = TextStyle(fontSize = 13.sp, color = gray),
-            maxLines = 1,
-            modifier = GlanceModifier.fillMaxWidth()
-        )
-        Spacer(modifier = GlanceModifier.height(14.dp))
-        Row(
-            modifier = GlanceModifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PhysicalButton("⏮", 46.dp, 18.sp, R.drawable.widget_button_3d_selector, actionRunCallback<PreviousAction>())
-            Spacer(modifier = GlanceModifier.width(18.dp))
-            PhysicalButton(if (state.isPlaying) "⏸" else "▶", 60.dp, 22.sp, R.drawable.widget_button_3d_primary_selector, actionRunCallback<PlayPauseAction>())
-            Spacer(modifier = GlanceModifier.width(18.dp))
-            PhysicalButton("⏭", 46.dp, 18.sp, R.drawable.widget_button_3d_selector, actionRunCallback<NextAction>())
+    Row(
+        modifier = GlanceModifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = GlanceModifier.defaultWeight()) {
+            Text(
+                text = state.title ?: "Music Box",
+                style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = white),
+                maxLines = 1,
+                modifier = GlanceModifier.fillMaxWidth().clickable(actionStartActivity<MainActivity>())
+            )
+            Text(
+                text = state.artist ?: if (state.hasQueue) "" else "Nenhuma música tocando",
+                style = TextStyle(fontSize = 12.sp, color = gray),
+                maxLines = 1,
+                modifier = GlanceModifier.fillMaxWidth()
+            )
         }
+        Spacer(modifier = GlanceModifier.width(10.dp))
+        WidgetIconButton(R.drawable.ic_widget_previous, 32.dp, 15.dp, R.drawable.widget_button_secondary_selector, actionRunCallback<PreviousAction>())
+        Spacer(modifier = GlanceModifier.width(8.dp))
+        WidgetIconButton(
+            if (state.isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play,
+            40.dp, 18.dp, R.drawable.widget_button_primary_selector, actionRunCallback<PlayPauseAction>()
+        )
+        Spacer(modifier = GlanceModifier.width(8.dp))
+        WidgetIconButton(R.drawable.ic_widget_next, 32.dp, 15.dp, R.drawable.widget_button_secondary_selector, actionRunCallback<NextAction>())
     }
 }
 
-/** Mesma ideia do médio, só que com mais espaço pra capa/texto respirarem e botões maiores — pro widget grande de verdade. */
+/** Cartão horizontal maior: mesma ideia do médio, com mais espaço pra capa/texto respirarem e botões maiores. */
 @Composable
 private fun LargeContent(state: WidgetPlaybackState, white: ColorProvider, gray: ColorProvider) {
     Column(
-        modifier = GlanceModifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 18.dp),
+        modifier = GlanceModifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         Text(
             text = state.title ?: "Music Box",
-            style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 20.sp, color = white),
+            style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 18.sp, color = white),
             maxLines = 1,
             modifier = GlanceModifier.fillMaxWidth().clickable(actionStartActivity<MainActivity>())
         )
         Text(
             text = state.artist ?: if (state.hasQueue) "" else "Nenhuma música tocando",
-            style = TextStyle(fontSize = 15.sp, color = gray),
+            style = TextStyle(fontSize = 14.sp, color = gray),
             maxLines = 1,
             modifier = GlanceModifier.fillMaxWidth()
         )
-        Spacer(modifier = GlanceModifier.height(18.dp))
+        Spacer(modifier = GlanceModifier.height(10.dp))
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            PhysicalButton("⏮", 52.dp, 20.sp, R.drawable.widget_button_3d_selector, actionRunCallback<PreviousAction>())
-            Spacer(modifier = GlanceModifier.width(22.dp))
-            PhysicalButton(if (state.isPlaying) "⏸" else "▶", 70.dp, 26.sp, R.drawable.widget_button_3d_primary_selector, actionRunCallback<PlayPauseAction>())
-            Spacer(modifier = GlanceModifier.width(22.dp))
-            PhysicalButton("⏭", 52.dp, 20.sp, R.drawable.widget_button_3d_selector, actionRunCallback<NextAction>())
+            WidgetIconButton(R.drawable.ic_widget_previous, 44.dp, 20.dp, R.drawable.widget_button_secondary_selector, actionRunCallback<PreviousAction>())
+            Spacer(modifier = GlanceModifier.width(18.dp))
+            WidgetIconButton(
+                if (state.isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play,
+                56.dp, 24.dp, R.drawable.widget_button_primary_selector, actionRunCallback<PlayPauseAction>()
+            )
+            Spacer(modifier = GlanceModifier.width(18.dp))
+            WidgetIconButton(R.drawable.ic_widget_next, 44.dp, 20.dp, R.drawable.widget_button_secondary_selector, actionRunCallback<NextAction>())
         }
     }
 }
 
-/** Botão circular "saltado" da superfície — capa em drawable simula o 3D, aqui só centralizamos o ícone. */
+/**
+ * Botão circular chapado (sem bisel/brilho falso simulando 3D) com um
+ * ícone vetorial de verdade centralizado — usado tanto pros botões
+ * secundários (translúcidos) quanto pro principal (cor de destaque sólida),
+ * só trocando o drawable de fundo e o tamanho.
+ */
 @Composable
-private fun PhysicalButton(
-    emoji: String,
-    size: androidx.compose.ui.unit.Dp,
-    fontSize: androidx.compose.ui.unit.TextUnit,
+private fun WidgetIconButton(
+    icon: Int,
+    size: Dp,
+    iconSize: Dp,
     background: Int,
-    onClick: androidx.glance.action.Action
+    onClick: Action
 ) {
     Box(
         modifier = GlanceModifier
@@ -214,14 +243,10 @@ private fun PhysicalButton(
             .clickable(onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = emoji,
-            style = TextStyle(
-                fontWeight = FontWeight.Bold,
-                fontSize = fontSize,
-                color = ColorProvider(Color.White),
-                textAlign = TextAlign.Center
-            )
+        Image(
+            provider = ImageProvider(icon),
+            contentDescription = null,
+            modifier = GlanceModifier.size(iconSize)
         )
     }
 }

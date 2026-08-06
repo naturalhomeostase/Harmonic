@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Cartão horizontal maior — capa grande à esquerda, texto e controles à
+     direita. Antes era 4x4 (quadrado perfeito), o oposto do "mais
+     horizontal" que faz sentido pra um widget de música. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="250dp"
-    android:minHeight="250dp"
-    android:targetCellWidth="4"
-    android:targetCellHeight="4"
+    android:minWidth="280dp"
+    android:minHeight="130dp"
+    android:targetCellWidth="5"
+    android:targetCellHeight="2"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_loading"
     android:resizeMode="horizontal|vertical"
