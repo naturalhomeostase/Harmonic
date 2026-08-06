@@ -192,6 +192,26 @@ class SettingsRepository(private val context: Context) {
 
         // Sleep timer
         val SLEEP_TIMER_END_AT = longPreferencesKey("sleep_timer_end_at") // epoch ms, 0 = desativado
+
+        // Ordenação das abas principais — precisa sobreviver a fechar o app
+        // de verdade (não só trocar de tela), então não dá pra confiar só
+        // em rememberSaveable (que sobrevive à navegação e à morte do
+        // processo em segundo plano, mas não quando o usuário fecha o app
+        // pelos apps recentes e abre de novo do zero).
+        val SONGS_SORT_KEY = stringPreferencesKey("songs_sort_key")
+        val SONGS_SORT_ASCENDING = booleanPreferencesKey("songs_sort_ascending")
+    }
+
+    // "dateAdded" descendente (mais recente primeiro) como padrão de
+    // fábrica — antes era sempre por título, sem essa opção existir.
+    val songsSortKey: Flow<String> = data.map { it[Keys.SONGS_SORT_KEY] ?: "dateAdded" }
+    val songsSortAscending: Flow<Boolean> = data.map { it[Keys.SONGS_SORT_ASCENDING] ?: false }
+
+    suspend fun setSongsSort(key: String, ascending: Boolean) {
+        context.dataStore.edit {
+            it[Keys.SONGS_SORT_KEY] = key
+            it[Keys.SONGS_SORT_ASCENDING] = ascending
+        }
     }
 
     val accentColor: Flow<Int?> = data.map { it[Keys.ACCENT_COLOR] }

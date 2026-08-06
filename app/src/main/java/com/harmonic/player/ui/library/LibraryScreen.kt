@@ -311,8 +311,13 @@ fun LibraryScreen(
     // — voltando sempre pro padrão de fábrica em vez de manter a escolha
     // da pessoa. As telas de detalhe (dentro de um artista/álbum) já
     // usavam rememberSaveable por esse mesmo motivo; aqui só faltava.
-    var sortKey by rememberSaveable { mutableStateOf("title") }
-    var sortAscending by rememberSaveable { mutableStateOf(true) }
+    // Fica salvo de verdade (DataStore), não só rememberSaveable — antes
+    // sobrevivia a trocar de tela mas voltava pro padrão de fábrica toda
+    // vez que o app era fechado por completo e reaberto. Padrão de
+    // fábrica agora é "Data adicionada" (mais recentes primeiro) em vez de
+    // alfabético.
+    val sortKey by settings.songsSortKey.collectAsState(initial = "dateAdded")
+    val sortAscending by settings.songsSortAscending.collectAsState(initial = false)
     var minDurationFilterSec by remember { mutableStateOf(0) }
     var maxDurationFilterSec by remember { mutableStateOf(0) } // 0 = sem limite máximo
     var showDurationFilterDialog by remember { mutableStateOf(false) }
@@ -801,7 +806,8 @@ fun LibraryScreen(
                                 }
                                 com.harmonic.player.ui.common.SortMenuButton(
                                     options = songSortOptions, selectedKey = sortKey, ascending = sortAscending,
-                                    onSelect = { sortKey = it }, onToggleDirection = { sortAscending = !sortAscending }
+                                    onSelect = { newKey -> scope.launch { settings.setSongsSort(newKey, sortAscending) } },
+                                    onToggleDirection = { scope.launch { settings.setSongsSort(sortKey, !sortAscending) } }
                                 )
                                 val durationFilterActive = minDurationFilterSec > 0 || maxDurationFilterSec > 0
                                 IconButton(onClick = { showDurationFilterDialog = true }, modifier = Modifier.size(32.dp)) {
