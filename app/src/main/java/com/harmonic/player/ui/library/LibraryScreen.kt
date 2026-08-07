@@ -1234,7 +1234,7 @@ fun LibraryScreen(
                                         )
                                     },
                                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                    modifier = Modifier.compactVertical(4.dp).combinedClickable(
+                                    modifier = Modifier.compactVertical(6.dp).combinedClickable(
                                         onClick = {
                                             drilledGroup = album.album
                                             drilledAlbumId = album.albumId
@@ -2089,7 +2089,7 @@ private fun GroupList(items: List<String>, onClick: (String) -> Unit) {
                     }
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                modifier = Modifier.compactVertical(3.dp).clickable { onClick(name) }
+                modifier = Modifier.compactVertical(6.dp).clickable { onClick(name) }
             )
         }
     }
@@ -2152,7 +2152,7 @@ private fun ArtistRow(artist: ArtistSummary, dao: SongDao, onLongClick: () -> Un
         sampleSong = dao.getFirstSongForArtist(artist.name)
     }
     ListItem(
-        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        modifier = Modifier.compactVertical(6.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = {
             com.harmonic.player.ui.common.AlbumArt(

@@ -120,42 +120,5 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Widgets de tela inicial: pequeno, médio e grande — cada um com
-             seu próprio receiver, pra aparecerem como opções separadas no
-             seletor de widgets do sistema em vez de um só genérico. -->
-        <receiver
-            android:name=".widget.HarmonicWidgetSmallReceiver"
-            android:label="@string/app_name"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/harmonic_widget_small_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.HarmonicWidgetMediumReceiver"
-            android:label="@string/app_name"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/harmonic_widget_medium_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.HarmonicWidgetLargeReceiver"
-            android:label="@string/app_name"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/harmonic_widget_large_info" />
-        </receiver>
-
     </application>
 </manifest>
