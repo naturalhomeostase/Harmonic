@@ -1,142 +1,78 @@
-package com.harmonic.player.ui.nowplaying
+package com.harmonic.player.data
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import com.harmonic.player.data.LyricLine
-import com.harmonic.player.data.LyricsResult
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.jaudiotagger.audio.AudioFileIO
+import org.jaudiotagger.tag.FieldKey
+import java.io.File
 
 /**
- * Mostra a letra da música, com a linha correspondente ao instante atual
- * destacada e centralizada automaticamente na tela — como em qualquer
- * player com letra sincronizada (Spotify, Apple Music, etc). Quando a
- * letra não é sincronizada (.txt simples) ou não existe, mostra o texto
- * corrido ou uma mensagem, sem tentar "simular" sincronismo que não existe.
- *
- * Além da linha "tocando agora" (destacada na cor de destaque), o usuário
- * pode TOCAR numa linha pra selecioná-la (fundo translúcido) — essa é a
- * linha usada pelo botão de compartilhar no topo da tela.
+ * Edita as tags de verdade dentro do arquivo de áudio (ID3 no MP3, Vorbis
+ * Comment no OGG/FLAC, MP4 atoms no M4A...) — diferente do "Renomear" do
+ * menu de música, que só grava no banco do app. Escrevendo direto no
+ * arquivo, a mudança sobrevive a reinstalar o app, limpar o cache, ou abrir
+ * a música em qualquer outro player.
  */
-/**
- * Sombra difusa escura por trás do texto da letra — sem isso, quando a cor
- * da letra (branca, ou a cor de destaque na linha atual) fica parecida com
- * o tom do fundo escolhido pelo usuário (tema/papel de parede/imagem da
- * galeria), o texto quase desaparece. Uma sombra suave cria contraste em
- * qualquer fundo, sem precisar adivinhar a cor de fundo certa caso a caso.
- */
-private val lyricTextShadow = Shadow(
-    color = Color.Black.copy(alpha = 0.75f),
-    offset = Offset(0f, 1f),
-    blurRadius = 10f
-)
+object TagEditor {
 
-@Composable
-fun LyricsView(
-    lyrics: LyricsResult,
-    positionMs: Long,
-    selectedIndex: Int? = null,
-    onLineClick: ((Int, String) -> Unit)? = null,
-    modifier: Modifier = Modifier
-) {
-    when (lyrics) {
-        is LyricsResult.Synced -> SyncedLyrics(lyrics.lines, positionMs, selectedIndex, onLineClick, modifier)
-        is LyricsResult.PlainText -> Box(modifier = modifier, contentAlignment = Alignment.TopCenter) {
-            Text(
-                lyrics.text,
-                style = MaterialTheme.typography.bodyLarge.copy(shadow = lyricTextShadow),
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(24.dp)
+    data class TagValues(
+        val title: String,
+        val artist: String,
+        val album: String,
+        val genre: String,
+        val year: String,
+        val trackNumber: String,
+        val composer: String = ""
+    )
+
+    /** Lê as tags atuais direto do arquivo (não do banco do app), pra pré-preencher o formulário de edição. */
+    suspend fun read(path: String): TagValues? = withContext(Dispatchers.IO) {
+        try {
+            val audioFile = AudioFileIO.read(File(path))
+            val tag = audioFile.tag
+            TagValues(
+                title = tag?.getFirst(FieldKey.TITLE).orEmpty(),
+                artist = tag?.getFirst(FieldKey.ARTIST).orEmpty(),
+                album = tag?.getFirst(FieldKey.ALBUM).orEmpty(),
+                genre = tag?.getFirst(FieldKey.GENRE).orEmpty(),
+                year = tag?.getFirst(FieldKey.YEAR).orEmpty(),
+                trackNumber = tag?.getFirst(FieldKey.TRACK).orEmpty(),
+                composer = tag?.getFirst(FieldKey.COMPOSER).orEmpty()
             )
-        }
-        is LyricsResult.NotFound -> Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text(
-                "Nenhuma letra encontrada pra essa música.\n" +
-                "Coloque um arquivo .lrc (sincronizado) ou .txt com o mesmo\n" +
-                "nome do arquivo de áudio, na mesma pasta.",
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                color = Color.White.copy(alpha = 0.6f),
-                modifier = Modifier.padding(24.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun SyncedLyrics(
-    lines: List<LyricLine>,
-    positionMs: Long,
-    selectedIndex: Int?,
-    onLineClick: ((Int, String) -> Unit)?,
-    modifier: Modifier = Modifier
-) {
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-
-    // Última linha cujo timestamp já passou é a linha "atual".
-    val currentIndex = remember(lines, positionMs) {
-        lines.indexOfLast { it.timestampMs <= positionMs }.coerceAtLeast(0)
-    }
-
-    LaunchedEffect(currentIndex) {
-        scope.launch {
-            // Centraliza a linha atual na tela (offset negativo empurra ela
-            // pro meio, em vez de deixar colada no topo da lista).
-            listState.animateScrollToItem(
-                index = (currentIndex - 2).coerceAtLeast(0)
-            )
+        } catch (e: Exception) {
+            null
         }
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier,
-        contentPadding = PaddingValues(vertical = 120.dp, horizontal = 24.dp)
-    ) {
-        itemsIndexed(lines) { index, line ->
-            val isCurrent = index == currentIndex
-            val isSelected = index == selectedIndex
-            val color by animateColorAsState(
-                targetValue = if (isCurrent) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.6f),
-                label = "lyric_line_color"
-            )
-            Text(
-                line.text.ifBlank { "♪" },
-                style = (if (isCurrent) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge)
-                    .copy(shadow = lyricTextShadow),
-                color = color,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .then(
-                        if (isSelected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
-                        else Modifier
-                    )
-                    .then(
-                        if (onLineClick != null) Modifier.clickable { onLineClick(index, line.text) }
-                        else Modifier
-                    )
-                    .padding(vertical = 8.dp)
-            )
+    /**
+     * Grava as tags no arquivo. Cada campo é tentado separadamente — se um
+     * formato não suportar um campo específico (raro, mas acontece com
+     * alguns campos em alguns formatos), os outros ainda são salvos em vez
+     * de tudo falhar junto.
+     */
+    suspend fun write(path: String, values: TagValues): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val audioFile = AudioFileIO.read(File(path))
+            val tag = audioFile.tagOrCreateAndSetDefault
+
+            fun setSafe(key: FieldKey, value: String) {
+                try {
+                    if (value.isBlank()) tag.deleteField(key) else tag.setField(key, value)
+                } catch (e: Exception) { /* campo não suportado nesse formato — ignora só esse campo */ }
+            }
+
+            setSafe(FieldKey.TITLE, values.title)
+            setSafe(FieldKey.ARTIST, values.artist)
+            setSafe(FieldKey.ALBUM, values.album)
+            setSafe(FieldKey.GENRE, values.genre)
+            setSafe(FieldKey.YEAR, values.year)
+            setSafe(FieldKey.TRACK, values.trackNumber)
+            setSafe(FieldKey.COMPOSER, values.composer)
+
+            audioFile.commit()
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 }

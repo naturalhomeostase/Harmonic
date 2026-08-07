@@ -1,93 +1,89 @@
-package com.harmonic.player.ui.settings
+package com.harmonic.player.playback
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material3.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.harmonic.player.data.MusicDatabase
-import kotlinx.coroutines.launch
+import androidx.media3.common.Player
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+data class WidgetPlaybackState(
+    val title: String? = null,
+    val artist: String? = null,
+    val isPlaying: Boolean = false,
+    val hasQueue: Boolean = false,
+    val currentMediaId: Long? = null,
+    val coverBitmap: android.graphics.Bitmap? = null
+)
 
 /**
- * Lista as músicas ocultadas individualmente (menu "Ocultar música"/
- * "Ocultar álbum") com um botão pra reexibir cada uma — sem essa tela, uma
- * música escondida por engano ficava impossível de recuperar, já que ela
- * some de toda a biblioteca (Músicas, Artistas, Álbuns...) e não tem mais
- * nenhum jeito de encontrá-la de novo pra desfazer.
+ * Ponte entre o widget de tela inicial (Glance) e o player real, que só
+ * existe dentro do `PlaybackService`. Como o serviço roda no mesmo processo
+ * do app, guardar a referência do `Player` aqui (populada pelo próprio
+ * serviço) é o caminho mais direto pro widget ler/controlar a reprodução,
+ * sem precisar montar um MediaController próprio só pra isso.
  */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun HiddenSongsScreen(database: MusicDatabase, onBack: () -> Unit) {
-    val dao = database.songDao()
-    val scope = rememberCoroutineScope()
-    val hiddenSongs by dao.getHiddenSongs().collectAsState(initial = emptyList())
+object PlaybackServiceHolder {
+    private var player: Player? = null
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        topBar = {
-            TopAppBar(
-                title = { Text("Músicas ocultas") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-            )
-        }
-    ) { padding ->
-        if (hiddenSongs.isEmpty()) {
-            Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                Text("Nenhuma música oculta no momento", color = Color.White.copy(alpha = 0.6f))
-            }
-            return@Scaffold
-        }
+    private val _state = MutableStateFlow(WidgetPlaybackState())
+    val state: StateFlow<WidgetPlaybackState> = _state.asStateFlow()
 
-        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-            items(hiddenSongs, key = { it.id }) { song ->
-                ListItem(
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    leadingContent = {
-                        com.harmonic.player.ui.common.AlbumArt(
-                            song = song,
-                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
-                        )
-                    },
-                    headlineContent = {
-                        Text(song.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    },
-                    supportingContent = {
-                        Text(song.artist, color = Color.White.copy(alpha = 0.55f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    },
-                    trailingContent = {
-                        TextButton(onClick = { scope.launch { dao.setSongHidden(song.id, false) } }) {
-                            Icon(Icons.Filled.Visibility, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Reexibir")
-                        }
-                    }
-                )
-            }
-        }
-        com.harmonic.player.ui.common.FastScrollbar(
-            listState = listState,
-            itemCount = hiddenSongs.size,
-            modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd)
+    // Ponte pro botão "Favoritar" da notificação: quando o coração é tocado
+    // NO APP (tela Tocando Agora, listas), o app avisa aqui — e o serviço
+    // (que "ouve" isso) atualiza o ícone da notificação na hora, sem
+    // precisar trocar de música pra sincronizar.
+    private var onFavoriteChangedExternally: ((songId: Long, isFavorite: Boolean) -> Unit)? = null
+
+    fun setFavoriteChangeListener(listener: ((Long, Boolean) -> Unit)?) {
+        onFavoriteChangedExternally = listener
+    }
+
+    fun notifyFavoriteChanged(songId: Long, isFavorite: Boolean) {
+        onFavoriteChangedExternally?.invoke(songId, isFavorite)
+    }
+
+    fun attach(player: Player) {
+        this.player = player
+    }
+
+    fun detach() {
+        player = null
+        _state.value = WidgetPlaybackState()
+    }
+
+    fun refreshState() {
+        val p = player ?: run { _state.value = WidgetPlaybackState(); return }
+        val metadata = p.mediaMetadata
+        val mediaId = p.currentMediaItem?.mediaId?.toLongOrNull()
+        // Só zera a capa quando a música REALMENTE mudou — sem isso, cada
+        // play/pause (que também chama refreshState) fazia a capa sumir e
+        // recarregar do zero, piscando à toa no widget.
+        val songChanged = mediaId != _state.value.currentMediaId
+        _state.value = _state.value.copy(
+            title = metadata.title?.toString(),
+            artist = metadata.artist?.toString(),
+            isPlaying = p.isPlaying,
+            hasQueue = p.mediaItemCount > 0,
+            currentMediaId = mediaId,
+            coverBitmap = if (songChanged) null else _state.value.coverBitmap
         )
+    }
+
+    /** Chamado pelo PlaybackService depois de carregar a capa em segundo plano — só aplica se a música ainda for a mesma. */
+    fun updateCover(mediaId: Long?, bitmap: android.graphics.Bitmap?) {
+        if (mediaId == _state.value.currentMediaId) {
+            _state.value = _state.value.copy(coverBitmap = bitmap)
         }
+    }
+
+    fun togglePlayPause() {
+        player?.let { if (it.isPlaying) it.pause() else it.play() }
+    }
+
+    fun skipNext() {
+        player?.seekToNextMediaItem()
+    }
+
+    fun skipPrevious() {
+        player?.seekToPreviousMediaItem()
     }
 }

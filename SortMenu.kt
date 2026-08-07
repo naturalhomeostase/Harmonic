@@ -1,68 +1,105 @@
-package com.harmonic.player
+package com.harmonic.player.ui.common
 
-import android.app.Application
-import android.content.Context
-import android.content.Intent
-import com.harmonic.player.data.MediaStoreScanner
-import com.harmonic.player.data.MusicDatabase
-import com.harmonic.player.data.MusicRepository
-import com.harmonic.player.data.SettingsRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 
-class HarmonicApp : Application() {
-    // Escopo de corrotina que vive enquanto o app existir — o escaneamento
-    // do MediaStore roda aqui, não dentro de uma tela, então não reinicia
-    // toda vez que o usuário navega entre telas.
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
-    val database by lazy { MusicDatabase.getInstance(this) }
-    val settings by lazy { SettingsRepository(this) }
-    private val scanner by lazy { MediaStoreScanner(this) }
-    val musicRepository by lazy { MusicRepository(scanner, database.songDao(), settings) }
+/** Uma opção de ordenação — [key] é um identificador interno estável, [label] é o texto mostrado. */
+data class SortOption(val key: String, val label: String)
 
-    override fun onCreate() {
-        super.onCreate()
-        installCrashHandler()
-        musicRepository.startObserving(appScope)
+/**
+ * Botão de "ordenar por" com um menu suspenso: lista de critérios (ex.
+ * Título/Artista/Duração/Data adicionada) + um toggle de
+ * crescente/decrescente no final. Reutilizado em Músicas, Playlists,
+ * Pastas, Artistas e Álbuns — só a lista de [options] muda.
+ */
+@Composable
+fun SortMenuButton(
+    options: List<SortOption>,
+    selectedKey: String,
+    ascending: Boolean,
+    onSelect: (String) -> Unit,
+    onToggleDirection: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    // Mesmo tamanho do botão de shuffle ao lado (32dp/18dp) — antes este
+    // ficava no tamanho padrão do IconButton (48dp), forçando a barra de
+    // totais inteira a ficar mais alta que o necessário só por causa dele,
+    // sobrando bastante espaço vazio acima/abaixo do texto pequeno ao lado.
+    IconButton(onClick = { expanded = true }, modifier = androidx.compose.ui.Modifier.size(32.dp)) {
+        Icon(
+            Icons.Filled.Sort,
+            contentDescription = "Ordenar por",
+            tint = Color.White.copy(alpha = 0.85f),
+            modifier = androidx.compose.ui.Modifier.size(18.dp)
+        )
     }
 
-    /**
-     * Sem isso, qualquer exceção não tratada matava o processo na hora — o
-     * app "abre e fecha" sem deixar nenhum rastro visível, e como não dá
-     * pra plugar num Android Studio pra olhar o Logcat, não tinha como
-     * saber o que realmente aconteceu. Agora, ao travar, abre a
-     * [CrashActivity] mostrando o erro exato (com botão de copiar) em vez
-     * de só fechar silenciosamente.
-     */
-    private fun installCrashHandler() {
-        Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
-            try {
-                val sw = java.io.StringWriter()
-                throwable.printStackTrace(java.io.PrintWriter(sw))
-                val trace = sw.toString()
-
-                // Salva também em SharedPreferences: se por algum motivo a
-                // CrashActivity não conseguir abrir a tempo (processo
-                // morrendo rápido demais), o erro ainda fica recuperável.
-                getSharedPreferences(CrashActivity.PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit()
-                    .putString(CrashActivity.KEY_LAST_CRASH, trace)
-                    .apply()
-
-                val intent = Intent(this, CrashActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    putExtra(CrashActivity.EXTRA_STACK_TRACE, trace)
+    // Menu bem mais curto que os outros (só uma lista de critérios + um
+    // toggle crescente/decrescente), então usa uma largura menor — os
+    // demais menus do app (música, álbum, playlist...) usam a largura
+    // padrão de [ThemedDropdownMenu] pra ficarem visualmente consistentes
+    // entre si.
+    ThemedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, widthDp = 200.dp) {
+        val onAccent = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+        androidx.compose.material3.Text(
+            "Ordenar por",
+            style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
+            color = onAccent.copy(alpha = 0.6f),
+            modifier = androidx.compose.ui.Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+        HorizontalDivider(thickness = 0.5.dp, color = onAccent.copy(alpha = 0.15f))
+        options.forEach { option ->
+            DropdownMenuItem(
+                text = { Text(option.label, color = onAccent) },
+                leadingIcon = {
+                    if (option.key == selectedKey) {
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = onAccent)
+                    }
+                },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                modifier = androidx.compose.ui.Modifier.heightIn(min = 40.dp),
+                onClick = {
+                    onSelect(option.key)
+                    expanded = false
                 }
-                startActivity(intent)
-            } catch (e: Exception) {
-                // Se nem isso funcionar, cai pro comportamento padrão do
-                // Android abaixo em vez de travar sem chance nenhuma.
-            } finally {
-                android.os.Process.killProcess(android.os.Process.myPid())
-                kotlin.system.exitProcess(10)
-            }
+            )
         }
+        HorizontalDivider(thickness = 0.5.dp, color = onAccent.copy(alpha = 0.15f))
+        DropdownMenuItem(
+            text = { Text(if (ascending) "Crescente" else "Decrescente", color = onAccent) },
+            leadingIcon = {
+                Icon(
+                    if (ascending) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                    contentDescription = null,
+                    tint = onAccent
+                )
+            },
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+            modifier = androidx.compose.ui.Modifier.heightIn(min = 40.dp),
+            onClick = {
+                onToggleDirection()
+                expanded = false
+            }
+        )
     }
 }

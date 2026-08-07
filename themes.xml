@@ -1,10 +1,7 @@
-package com.harmonic.player.data
-
-import androidx.room.Entity
-
-/**
- * Pastas que o usuário escolheu esconder da biblioteca (aba Pastas e lista
- * de Músicas). `path` é a mesma string usada em `Song.folder`.
- */
-@Entity(tableName = "hidden_folders", primaryKeys = ["path"])
-data class HiddenFolder(val path: String)
+<resources>
+    <style name="Theme.Harmonic" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

@@ -1,25 +1,49 @@
-package com.harmonic.player.playback
+package com.harmonic.player.data
 
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.PrimaryKey
 
 /**
- * O audioSessionId (necessário pro Equalizer/BassBoost/Virtualizer) só
- * existe na interface `ExoPlayer`, não na interface genérica `Player` usada
- * pelo `MediaController` do lado da UI — por isso não dá pra simplesmente
- * ler `controller.audioSessionId`.
+ * Representa uma música indexada a partir do MediaStore do Android.
+ * `mediaStoreId` é o id original do MediaStore, usado para detectar
+ * duplicatas e músicas removidas do aparelho durante o re-scan.
  *
- * Como o `PlaybackService` roda no mesmo processo do app (não declaramos
- * `android:process` no manifest), o jeito mais simples e confiável de levar
- * esse valor até a UI é este singleton: o serviço escreve, a UI (equalizador)
- * lê. Nada de IPC, nada de comandos customizados de MediaSession.
+ * O índice único em `mediaStoreId` é essencial: sem ele, o Room não tem
+ * como saber que uma música "nova" encontrada num re-scan já existe na
+ * tabela (o `id` interno é autogerado e sempre seria diferente), e cada
+ * reinício do app duplicava todas as músicas na biblioteca.
  */
-object PlaybackAudioSession {
-    private val _sessionId = MutableStateFlow(0)
-    val sessionId: StateFlow<Int> = _sessionId.asStateFlow()
-
-    fun update(id: Int) {
-        _sessionId.value = id
-    }
-}
+@Entity(tableName = "songs", indices = [Index(value = ["mediaStoreId"], unique = true)])
+data class Song(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val mediaStoreId: Long,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val albumId: Long,
+    val genre: String?,
+    val year: Int?,
+    val composer: String?,
+    val trackNumber: Int?,
+    val durationMs: Long,
+    val sizeBytes: Long,
+    val path: String,
+    val folder: String,
+    val bitrate: Int?,
+    val sampleRate: Int?,
+    val format: String,
+    val dateAdded: Long,
+    val dateModified: Long,
+    val isFavorite: Boolean = false,
+    val playCount: Int = 0,
+    val lastPlayedAt: Long? = null,
+    val playbackPositionMs: Long = 0,
+    // --- adicionados na fase 3 ---
+    val isHidden: Boolean = false,
+    /** Uri de uma imagem escolhida pelo usuário pra essa música (sobrepõe a capa embutida no arquivo). */
+    val customCoverUri: String? = null,
+    /** "Corte": pontos de início/fim usados na reprodução (0 = usa a música inteira). Não recodifica o arquivo. */
+    val trimStartMs: Long = 0,
+    val trimEndMs: Long = 0
+)

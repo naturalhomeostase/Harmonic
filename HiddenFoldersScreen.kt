@@ -1,85 +1,100 @@
-package com.harmonic.player.ui.common
+package com.harmonic.player.ui.settings
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import com.harmonic.player.data.DefaultWallpaper
-import com.harmonic.player.data.GradientTheme
-import com.harmonic.player.data.SettingsRepository
+import com.harmonic.player.data.HiddenFolder
+import com.harmonic.player.data.MusicDatabase
+import kotlinx.coroutines.launch
 
 /**
- * Desenha o fundo do app inteiro: uma imagem (padrão ou escolhida da
- * galeria) ou um gradiente (mais leve, sem decodificar nenhuma imagem —
- * por isso é o padrão de fábrica do app). Sombra e blur são ajustáveis
- * pelo usuário nas configurações de Aparência.
- *
- * Aplicado uma única vez, no topo da árvore de composição: cada tela usa
- * `containerColor = Color.Transparent` no Scaffold, e cada item de lista
- * usa fundo transparente, pra deixar esse fundo aparecer atrás de tudo.
- *
- * Nota: o blur (`Modifier.blur`) só tem efeito real no Android 12+ (API 31+)
- * — em aparelhos mais antigos a chamada não quebra nada, só não borra a
- * imagem, já que depende do RenderEffect do sistema.
+ * Lista todas as pastas com música (mesmo as já escondidas) com um switch
+ * pra cada uma — liga = aparece na biblioteca, desliga = some da aba
+ * Pastas e da lista de Músicas.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppBackground(settings: SettingsRepository, content: @Composable () -> Unit) {
-    val defaultWallpaperName by settings.defaultWallpaper.collectAsState(initial = null)
-    val customBackgroundUri by settings.backgroundUri.collectAsState(initial = null)
-    val gradientThemeName by settings.gradientTheme.collectAsState(initial = null)
-    val blurRadius by settings.backgroundBlurRadius.collectAsState(initial = 0)
-    val scrimAlphaPercent by settings.backgroundScrimAlpha.collectAsState(initial = 45)
+fun HiddenFoldersScreen(database: MusicDatabase, onBack: () -> Unit) {
+    val dao = database.songDao()
+    val scope = rememberCoroutineScope()
+    val allFolders by dao.getAllFoldersIncludingHidden().collectAsState(initial = emptyList())
+    val hiddenFolders by dao.getHiddenFolders().collectAsState(initial = emptyList())
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        val imageModel: Any? = when {
-            customBackgroundUri != null -> customBackgroundUri
-            defaultWallpaperName != null ->
-                DefaultWallpaper.values().find { it.name == defaultWallpaperName }
-                    ?.let { "file:///android_asset/${it.assetPath}" }
-            else -> null
-        }
-
-        if (imageModel != null) {
-            AsyncImage(
-                model = imageModel,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (blurRadius > 0) Modifier.blur(blurRadius.dp) else Modifier)
-            )
-        } else {
-            // Sem imagem escolhida: gradiente como padrão (mais leve — sem
-            // decodificar JPEG nenhum). Usa o tema salvo, ou "Meia-noite"
-            // se o usuário nunca mexeu nisso.
-            val theme = GradientTheme.values().find { it.name == gradientThemeName } ?: GradientTheme.APP_ICON
-            val colors = theme.colorsArgb.map { Color(it) }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Brush.linearGradient(colors))
-                    .then(if (blurRadius > 0) Modifier.blur(blurRadius.dp) else Modifier)
+    Scaffold(
+        containerColor = Color.Transparent,
+        topBar = {
+            TopAppBar(
+                title = { Text("Pastas ocultas") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
-
-        // Véu escuro ajustável pra garantir legibilidade do texto sobre o fundo
-        if (scrimAlphaPercent > 0) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = scrimAlphaPercent / 100f))
-            )
+    ) { padding ->
+        if (allFolders.isEmpty()) {
+            Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                Text("Nenhuma pasta encontrada ainda", color = Color.White.copy(alpha = 0.6f))
+            }
+            return@Scaffold
         }
 
-        content()
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            items(allFolders, key = { it }) { folder ->
+                val isHidden = hiddenFolders.contains(folder)
+                val folderName = folder.trimEnd('/').substringAfterLast('/')
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = {
+                        Icon(
+                            if (isHidden) Icons.Filled.VisibilityOff else Icons.Filled.Folder,
+                            contentDescription = null,
+                            tint = if (isHidden) Color.White.copy(alpha = 0.35f) else MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            folderName.ifBlank { folder },
+                            color = if (isHidden) Color.White.copy(alpha = 0.4f) else Color.White
+                        )
+                    },
+                    supportingContent = {
+                        Text(folder, color = Color.White.copy(alpha = if (isHidden) 0.3f else 0.55f))
+                    },
+                    trailingContent = {
+                        com.harmonic.player.ui.common.ThemedSwitch(
+                            checked = !isHidden,
+                            onCheckedChange = { visible ->
+                                scope.launch {
+                                    if (visible) dao.unhideFolder(folder) else dao.hideFolder(HiddenFolder(folder))
+                                }
+                            }
+                        )
+                    }
+                )
+            }
+        }
+        com.harmonic.player.ui.common.FastScrollbar(
+            listState = listState,
+            itemCount = allFolders.size,
+            modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd)
+        )
+        }
     }
 }
